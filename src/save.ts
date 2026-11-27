@@ -14,9 +14,20 @@ export interface Keeper {
   at: string;
 }
 
+/**
+ * Where in a beat the child stopped:
+ *   block      – setting up the shot (or not started yet)
+ *   quiz       – the keeper is in the can, its press question is still unanswered
+ *   interview  – every beat is done, the closing structured question is still unanswered
+ */
+export type Step = 'block' | 'quiz' | 'interview';
+
 export interface SceneSave {
   /** Index of the beat to resume at. 0 with no takes means "not started". */
   beat: number;
+  step: Step;
+  /** Has the child already been set down in this beat? If so its opening prop positions must not be re-applied. */
+  entered: boolean;
   lampZ: number;
   markX: number;
   takeNo: number;
@@ -41,7 +52,7 @@ const num = (v: unknown, fallback: number, lo = -Infinity, hi = Infinity) => (ty
 const count = (v: unknown) => Math.floor(num(v, 0, 0, 1e6));
 
 export function freshScene(beats: number): SceneSave {
-  return { beat: 0, lampZ: NaN, markX: NaN, takeNo: 0, beatTakes: new Array(beats).fill(0), quiz: { right: 0, asked: 0, marks: 0, outOf: 0 }, keepers: [], completed: 0 };
+  return { beat: 0, step: 'block', entered: false, lampZ: NaN, markX: NaN, takeNo: 0, beatTakes: new Array(beats).fill(0), quiz: { right: 0, asked: 0, marks: 0, outOf: 0 }, keepers: [], completed: 0 };
 }
 
 function readScene(raw: unknown, beats: number): SceneSave {
@@ -49,6 +60,8 @@ function readScene(raw: unknown, beats: number): SceneSave {
   if (!raw || typeof raw !== 'object') return s;
   const r = raw as Record<string, unknown>;
   s.beat = Math.floor(num(r.beat, 0, 0, beats - 1));
+  s.step = r.step === 'quiz' || r.step === 'interview' ? r.step : 'block';
+  s.entered = r.entered === true;
   s.lampZ = num(r.lampZ, NaN);
   s.markX = num(r.markX, NaN);
   s.takeNo = count(r.takeNo);
@@ -86,7 +99,7 @@ export function storeSave(save: Save, store: Store | null = safeStore()) {
 }
 
 /** Has the child got somewhere worth resuming? */
-export const inProgress = (s: SceneSave) => s.beat > 0 || s.takeNo > 0;
+export const inProgress = (s: SceneSave) => s.beat > 0 || s.takeNo > 0 || s.step !== 'block';
 
 function safeStore(): Store | null {
   try {

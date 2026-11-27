@@ -80,6 +80,8 @@ export class Stage {
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
   private flicker = 0;
+  /** "WxH" of the window the wide camera was last fitted to. */
+  fitted = '';
   private wide = { pos: new THREE.Vector3(-74, 62, 206), look: new THREE.Vector3(10, 15, 36) };
   private skins: Record<string, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = {};
 
@@ -579,6 +581,7 @@ export class Stage {
     this.camera.aspect = w / h;
     this.fitWide();
     this.placeCamera();
+    this.fitted = `${w}x${h}`;
   }
 
   /**

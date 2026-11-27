@@ -42,4 +42,4 @@ There is no separate "predict" step: with the lamp off, every set-up is a predic
 | `public/assets/` | Delivered textures and `manifest.json`; missing slots keep their placeholders |
 | `docs/art-brief.md` | Art requirements for the image-generation agent |
 | `docs/curriculum/` | Primary 4 objectives table the evidence log refers to |
-| `src/v1/`, `v1.html` | The earlier 2D prototype, kept for comparison at `/v1.html` |
+| `src/v1/`, `v1.html` | The earlier 2D prototype, kept for comparison. Local only: open `/v1.html` on the dev server. It is not part of the production build or the deployed site |
