@@ -73,6 +73,24 @@ try {
   await wait(900);
   await shot('02-play-start');
 
+  // Whatever the window shape, the lamp and the clapperboard must be on screen and clear of the HUD,
+  // and an idle player must be shown what to drag.
+  const home = page.viewportSize();
+  for (const [w, h] of [[1024, 768], [1180, 820], [1600, 900], [2000, 1100], [1366, 1024]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await wait(400);
+    const hs = await omt('o.handles');
+    const cap = await page.evaluate(() => document.getElementById('caption').getBoundingClientRect().toJSON());
+    const top = await page.evaluate(() => document.getElementById('top-right').getBoundingClientRect().toJSON());
+    for (const [name, p] of Object.entries({ lamp: hs.lamp, clapper: hs.clapper })) {
+      if (p.x < 30 || p.x > w - 30 || p.y < top.bottom + 10 || p.y > cap.top - 20) fail(`${w}x${h}: the ${name} is off screen or under the HUD at (${Math.round(p.x)}, ${Math.round(p.y)}); caption starts at ${Math.round(cap.top)}`);
+    }
+    if (w === 2000) await shot('02b-wide-window');
+  }
+  await page.setViewportSize(home);
+  await page.waitForFunction(() => window.__omt.hint, null, { timeout: 8000 * SLOW });
+  await shot('02c-hint');
+
   // Beat 1, lamp lit: a set-up that does not fit is a CUT, the fitting one is a keeper.
   let v = await take('03-play-cut');
   if (v.keeper) fail('the opening set-up should not be a keeper');

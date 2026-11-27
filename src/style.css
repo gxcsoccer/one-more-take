@@ -92,3 +92,6 @@ body.film #caption { bottom: 10.5vh; }
 .big:disabled { opacity: .4; }
 
 .big.ghost { margin-top: calc(var(--u) * 1.2); background: #e9dcbc; color: #2b2116; box-shadow: 0 .2em 0 #b8a67c; }
+
+/* The demonstrating hand: shows what to drag or tap when the player is idle. */
+#hint { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; font-size: calc(var(--u) * 6.5); line-height: 1; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .6)); will-change: transform, opacity; }

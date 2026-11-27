@@ -44,6 +44,9 @@ let lastVerdict: Verdict | null = null;
 const quizScore = { right: 0, asked: 0, marks: 0, outOf: 0 };
 let openKey: number[] = [];
 let wrapped = false;
+/** Seconds since the player last touched the set, and what they have moved since blocking began. */
+let idle = 0;
+const moved = { lamp: false, mark: false };
 let quizAnswer = -1;
 const beat = (): Beat => S.beats[beatIx];
 
@@ -105,6 +108,8 @@ function enterBeat(ix: number) {
 function backToBlocking() {
   const b = beat();
   phase = 'block';
+  idle = 0;
+  moved.lamp = moved.mark = false;
   stage.film = false;
   document.body.classList.remove('film');
   stage.lampOn = b.rehearsalLight;
@@ -307,6 +312,7 @@ const canvas = stage.renderer.domElement;
 window.addEventListener('pointerdown', unlock, { capture: true });
 canvas.addEventListener('pointerdown', e => {
   $('pop').hidden = true;
+  idle = 0;
   if (phase !== 'block') return;
   const what: Pickable | null = stage.pick(e.clientX, e.clientY);
   if (what === 'clapper') return action();
@@ -322,6 +328,8 @@ canvas.addEventListener('pointermove', e => {
   if (!drag || phase !== 'block') return;
   const p = stage.tablePoint(e.clientX, e.clientY);
   if (!p) return;
+  idle = 0;
+  moved[drag.what] = true;
   if (drag.what === 'lamp') setup.lampZ = clamp(p.z + drag.offset, S.lamp.min, S.lamp.max);
   else setup.markX = clamp(Math.round((p.x + drag.offset) * 4) / 4, S.duck.min, S.duck.max);
 });
@@ -341,6 +349,44 @@ document.addEventListener('click', e => {
     try { const u = new SpeechSynthesisUtterance(term.en); u.lang = 'en-GB'; speechSynthesis.speak(u); } catch { /* no speech here */ }
   };
 });
+
+// ---------- the demonstrating hand ----------
+/** What the hand should show right now, or null to hide it. */
+function hintNow(): { from: { x: number; y: number }; to?: { x: number; y: number } } | null {
+  if (phase !== 'block' || drag || idle < 2.5 || !$('modal').hidden) return null;
+  const b = beat(), lampFrom = stage.toClient(S.lamp.x, 5, setup.lampZ + 3);
+  const lampDrag = () => {
+    // Point towards the answer's side of the track, never give the answer away.
+    const dir = b.target.lampZ < setup.lampZ ? -1 : 1, z = clamp(setup.lampZ + dir * 26, S.lamp.min, S.lamp.max);
+    return { from: lampFrom, to: stage.toClient(S.lamp.x, 5, z + 3) };
+  };
+  const tap = { from: stage.toClient(44, 9, 92) };
+  if (b.rehearsalLight) return stage.clapperReady ? tap : lampDrag();
+  if (!moved.lamp) return lampDrag();
+  if (b.movable.includes('mark') && !moved.mark) return { from: stage.toClient(setup.markX, 3, S.duck.z + 8), to: stage.toClient(clamp(setup.markX + (b.target.markX < setup.markX ? -5 : 5), S.duck.min, S.duck.max), 3, S.duck.z + 8) };
+  return idle > 5 ? tap : null;
+}
+let hintClock = 0;
+function drawHint(dt: number) {
+  const el = $('hint'), h = hintNow();
+  if (!h) { el.hidden = true; hintClock = 0; return; }
+  hintClock += dt;
+  const u = (hintClock % 2.4) / 2.4;
+  let x = h.from.x, y = h.from.y, scale = 1, alpha = 1;
+  if (h.to) {
+    // Press, drag, lift, pause.
+    const k = clamp((u - 0.15) / 0.55, 0, 1), e = k * k * (3 - 2 * k);
+    x += (h.to.x - h.from.x) * e; y += (h.to.y - h.from.y) * e;
+    scale = u < 0.15 ? 1.15 - u : 1;
+    alpha = u > 0.8 ? 1 - (u - 0.8) / 0.2 : Math.min(1, u / 0.08);
+  } else {
+    scale = 1 + 0.16 * Math.sin(u * Math.PI * 4);
+  }
+  el.hidden = false;
+  el.style.opacity = String(alpha);
+  // The fingertip of the emoji sits at its top centre.
+  el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -8%) scale(${scale})`;
+}
 
 // ---------- loop ----------
 let prev = performance.now();
@@ -378,8 +424,10 @@ function frame(now: number) {
   } else covered.fill(false);
 
   if (burstT > 0 && (burstT -= dt) <= 0) $('burst').hidden = true;
+  idle += dt;
   setHTML($('caption'), caption());
   stage.update(dt);
+  drawHint(dt);
   requestAnimationFrame(frame);
 }
 
@@ -395,6 +443,7 @@ Object.assign(window, {
     get quizAnswer() { return quizAnswer; },
     get openKey() { return [...openKey]; },
     get saved() { return JSON.parse(JSON.stringify(saved())); },
+    get hint() { const h = $('hint'); return h.hidden ? null : h.getBoundingClientRect().toJSON(); },
     get handles() {
       return { lamp: stage.toClient(S.lamp.x, 5, setup.lampZ + 3), mark: stage.toClient(setup.markX, 3, S.duck.z + 8), clapper: stage.toClient(44, 8, 92) };
     },
