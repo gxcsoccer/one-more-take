@@ -63,6 +63,17 @@ async function pressQuestion(name, answerRight) {
   await page.click('#go');
 }
 
+// Close and reopen the game, then take the Continue button.
+async function reopen(name) {
+  await page.reload();
+  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
+  await wait(700);
+  if (name) await shot(name);
+  if (!(await page.$('#over'))) fail('after a reload mid-scene the intro should offer Start over next to Continue');
+  await page.click('#go');
+  await wait(400);
+}
+
 try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
@@ -82,25 +93,33 @@ try {
   await shot('04-play-fits');
   v = await take('05-play-keeper');
   if (!v.keeper) fail(`beat play: expected a keeper, match ${v.match}`);
-  await pressQuestion('05b-question-right', true);
+
+  // Reload while the press question is waiting: the keeper must not be re-shot or stored twice.
+  await phase('quiz');
+  let n = await omt('o.takeNo');
+  await reopen('05a-resume-card');
+  if ((await omt('o.phase')) !== 'quiz') fail(`reload before answering should come back to the question, got phase ${await omt('o.phase')}`);
+  if ((await omt('o.takeNo')) !== n || (await omt('o.saved.keepers.length')) !== 1) fail('reload before answering repeated the take or the keeper');
+  // Answer it, then reload before pressing on: the question must not be asked or counted again.
+  await page.click(`.opts button[data-i="${await omt('o.quizAnswer')}"]`);
+  await wait(300);
+  await shot('05b-question-right');
+  await reopen();
+  await phase('block');
+  if ((await omt('o.beat')) !== 'dark') fail(`reload after answering should go on to the dark beat, got ${await omt('o.beat')}`);
+  let sv0 = await omt('o.saved');
+  if (sv0.quiz.asked !== 1 || sv0.quiz.right !== 1 || sv0.keepers.length !== 1 || sv0.takeNo !== n) fail(`reload after answering changed the record: ${JSON.stringify(sv0)}`);
 
   // Beat 2, lamp off while blocking.
   await page.waitForFunction(() => window.__omt.beat === 'dark' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
 
-  // Close and reopen the game: it must offer to continue from this beat, with the take count intact.
-  const before = await omt('o.takeNo');
-  await page.reload();
-  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
-  await wait(800);
-  await shot('05c-resume-card');
-  if (!(await page.$('#over'))) fail('after a reload mid-scene the intro should offer Start over next to Continue');
-  await page.click('#go');
-  await phase('block');
-  if ((await omt('o.beat')) !== 'dark') fail(`resume should land on the dark beat, got ${await omt('o.beat')}`);
-  if ((await omt('o.takeNo')) !== before) fail('resume lost the take count');
   await wait(1200);
   await shot('06-dark-block');
+  // Move the lamp in the dark, reload: it must still be where the child left it, not back at the far end.
   await setLamp(80);
+  await reopen();
+  await phase('block');
+  if ((await omt('o.beat')) !== 'dark' || Math.abs((await omt('o.setup.lampZ')) - 80) > 1) fail(`the lamp position was not kept across a reload: beat ${await omt('o.beat')}, lamp ${await omt('o.setup.lampZ')}`);
   v = await take('07-dark-cut');
   if (v.keeper) fail('lamp at 80 should be too small for the dark beat');
   await phase('block');
@@ -123,7 +142,15 @@ try {
   await setMark(target.markX);
   v = await take('12-cat-keeper');
   if (!v.keeper) fail(`beat cat: expected a keeper, match ${v.match}, catDark ${v.catDark}`);
-  await pressQuestion('12b-question', true);
+  // Answer the last press question, then reload: the game must come back to the closing question,
+  // not to the cat beat.
+  await phase('quiz');
+  await wait(400);
+  await page.click(`.opts button[data-i="${await omt('o.quizAnswer')}"]`);
+  await wait(300);
+  await shot('12b-question');
+  await reopen();
+  if ((await omt('o.phase')) !== 'quiz' || (await omt('o.saved.keepers.length')) !== 3) fail('reload before the closing question should return to it with all three keepers');
   // Then the structured question: fill every blank, one of them wrongly, and hand in.
   await page.waitForSelector('#hand', { timeout: 5000 * SLOW });
   await shot('12c-interview');

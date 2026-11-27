@@ -11,7 +11,7 @@ import { setSound, sfx, soundOn, unlock } from './game/audio';
 import { record } from './evidence';
 import { lang, rich, setLang, t, terms } from './i18n';
 import { nextOpenQuestion, nextQuestion } from './game/questions';
-import { freshScene, inProgress, loadSave, storeSave } from './save';
+import { freshScene, inProgress, loadSave, storeSave, type Step } from './save';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -43,13 +43,14 @@ const covered: boolean[] = [];
 let lastVerdict: Verdict | null = null;
 const quizScore = { right: 0, asked: 0, marks: 0, outOf: 0 };
 let openKey: number[] = [];
-let wrapped = false;
+/** The point a reload should return to. It moves forward only at moments that must not be repeated. */
+const checkpoint: { beat: number; step: Step; entered: boolean } = { beat: 0, step: 'block', entered: false };
 let quizAnswer = -1;
 const beat = (): Beat => S.beats[beatIx];
 
 /** Write where the child is, so closing the app loses nothing. */
 function persist() {
-  Object.assign(saved(), { beat: beatIx, lampZ: setup.lampZ, markX: setup.markX, takeNo, beatTakes: [...beatTakes], quiz: { ...quizScore } });
+  Object.assign(saved(), { ...checkpoint, lampZ: setup.lampZ, markX: setup.markX, takeNo, beatTakes: [...beatTakes], quiz: { ...quizScore } });
   storeSave(save);
 }
 
@@ -86,10 +87,11 @@ function chalk(good = false) {
   stage.drawChalk(FINE, outline, trace, good);
 }
 
-function enterBeat(ix: number) {
+/** `resumed`: the child was already in this beat, so keep the props where they left them. */
+function enterBeat(ix: number, resumed = false) {
   beatIx = ix;
   const b = beat();
-  if (b.start) Object.assign(setup, b.start);
+  if (b.start && !resumed) Object.assign(setup, b.start);
   setup.lampZ = clamp(setup.lampZ, S.lamp.min, S.lamp.max);
   outline = maskOf(b.target, FINE);
   trace = null;
@@ -98,6 +100,7 @@ function enterBeat(ix: number) {
   chalk();
   stage.catVisible = b.cat;
   stage.movable = { lamp: b.movable.includes('lamp'), mark: b.movable.includes('mark') };
+  Object.assign(checkpoint, { beat: ix, step: 'block', entered: true });
   persist();
   backToBlocking();
 }
@@ -154,7 +157,11 @@ function runTake(dt: number) {
     const changed = lastSetup ? Number(Math.abs(lastSetup.lampZ - setup.lampZ) > 0.5) + Number(Math.abs(lastSetup.markX - setup.markX) > 0.25) : 0;
     record({ level: S.id, shot: b.id, kind: 'take', objectives: b.objectives, data: { take: beatTakes[beatIx], lampToDuck: Math.round(setup.lampZ - S.duck.z), markX: setup.markX, match: pct(v.match), keeper: v.keeper, blind: !b.rehearsalLight, changedSinceLast: changed } });
     lastSetup = { ...setup };
-    if (v.keeper) saved().keepers.push({ beat: b.id, lampZ: setup.lampZ, markX: setup.markX, match: v.match, takes: beatTakes[beatIx], at: new Date().toISOString() });
+    if (v.keeper) {
+      // From here a reload goes to this beat's question, never back to re-shoot it.
+      saved().keepers.push({ beat: b.id, lampZ: setup.lampZ, markX: setup.markX, match: v.match, takes: beatTakes[beatIx], at: new Date().toISOString() });
+      checkpoint.step = 'quiz';
+    }
     persist();
     if (v.keeper) {
       burst(t('keeper'), t('keeper.sub', { n: beatTakes[beatIx], p: pct(v.match) }), true);
@@ -174,10 +181,16 @@ function runTake(dt: number) {
       if (!b.rehearsalLight) { trace = maskOf(setup, FINE); chalk(); }
       return backToBlocking();
     }
-    if (b.id === 'play') return pressQuestion(() => enterBeat(1));
-    if (b.id === 'dark') return pressQuestion(() => { phase = 'cameo'; cameoT = 0; stage.catVisible = true; sfx.paw(); });
-    pressQuestion(() => interview(wrap));
+    pressQuestion(afterQuestion);
   }
+}
+
+/** What follows a beat's press question. */
+function afterQuestion() {
+  const id = beat().id;
+  if (id === 'play') return enterBeat(1);
+  if (id === 'dark') { phase = 'cameo'; cameoT = 0; stage.catVisible = true; sfx.paw(); return; }
+  interview(wrap);
 }
 
 // ---------- cards ----------
@@ -206,6 +219,9 @@ function pressQuestion(then: () => void) {
     if (right) quizScore.right++;
     right ? sfx.win() : sfx.sulk();
     record({ level: S.id, shot: b.id, kind: 'quiz', objectives: q.objectives, data: { question: q.id, correct: right, chose: q.options[order[chosen]].en } });
+    // Answered: a reload now goes on to the next beat (or the closing question), and never asks this one again.
+    if (beatIx < S.beats.length - 1) Object.assign(checkpoint, { beat: beatIx + 1, step: 'block', entered: false });
+    else checkpoint.step = 'interview';
     persist();
   }));
   el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; then(); };
@@ -255,7 +271,11 @@ function interview(then: () => void) {
     quizScore.outOf += total;
     got === total ? sfx.win() : sfx.tick();
     record({ level: S.id, shot: beat().id, kind: 'quiz', objectives: q.objectives, data: { question: q.id, marks: got, outOf: total } });
-    persist();
+    // Handed in: the scene is complete. It is counted once, keeps its keepers, and the next visit starts fresh.
+    const sv = saved();
+    Object.assign(sv, { ...freshScene(S.beats.length), keepers: sv.keepers, completed: sv.completed + 1 });
+    Object.assign(checkpoint, { beat: 0, step: 'block', entered: false });
+    storeSave(save);
     el.scrollTop = el.scrollHeight;
   };
   el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; then(); };
@@ -281,25 +301,26 @@ function intro() {
     Object.assign(quizScore, sv.quiz);
     if (Number.isFinite(sv.lampZ)) setup.lampZ = sv.lampZ;
     if (Number.isFinite(sv.markX)) setup.markX = sv.markX;
-    enterBeat(sv.beat);
+    const step = sv.step;
+    enterBeat(sv.beat, sv.entered || step !== 'block');
+    if (step === 'block') return;
+    // The shot was already in the can: go straight to its question instead of re-shooting.
+    checkpoint.step = step;
+    persist();
+    if (step === 'quiz') pressQuestion(afterQuestion);
+    else interview(wrap);
   };
   const over = el.querySelector<HTMLElement>('#over');
   if (over) over.onclick = () => { $('modal').hidden = true; startOver(); };
 }
 function wrap() {
   phase = 'wrap';
-  if (!wrapped) {
-    wrapped = true;
-    const sv = saved();
-    Object.assign(sv, { ...freshScene(S.beats.length), keepers: sv.keepers, completed: sv.completed + 1 });
-    storeSave(save);
-  }
   stage.film = false;
   stage.houseLights = 0.5;
   document.body.classList.remove('film');
   const rows = S.beats.map((b, i) => `<tr><td>${t(`wrap.${b.id}`)}</td><td>${t('takes', { n: beatTakes[i] })}</td></tr>`).join('');
   const el = card(`<h1>${t('wrap.h')}</h1><p>${rich('wrap.p')}</p><table>${rows}<tr><td colspan="2">${t('score', { r: quizScore.right, n: quizScore.asked })}</td></tr><tr><td colspan="2">${t('score.open', { m: quizScore.marks, n: quizScore.outOf })}</td></tr></table><button class="big" id="go">${t('replay')}</button>`);
-  el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; wrapped = false; startOver(); };
+  el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; startOver(); };
 }
 
 // ---------- input ----------
@@ -325,7 +346,11 @@ canvas.addEventListener('pointermove', e => {
   if (drag.what === 'lamp') setup.lampZ = clamp(p.z + drag.offset, S.lamp.min, S.lamp.max);
   else setup.markX = clamp(Math.round((p.x + drag.offset) * 4) / 4, S.duck.min, S.duck.max);
 });
-for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, () => (drag = null));
+// Letting go of a prop saves where it was put; so does leaving the page mid-drag.
+const drop = () => { if (drag) { drag = null; if (phase === 'block') persist(); } };
+for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, drop);
+window.addEventListener('pagehide', drop);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && drop());
 $('btn-lang').onclick = () => { setLang(lang === 'en' ? 'zh' : 'en'); save.lang = lang; storeSave(save); renderStatic(); if (phase === 'intro') intro(); if (phase === 'wrap') wrap(); };
 $('btn-sound').onclick = () => { setSound(!soundOn); save.sound = soundOn; storeSave(save); renderStatic(); sfx.tick(); };
 document.addEventListener('click', e => {

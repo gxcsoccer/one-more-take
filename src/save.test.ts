@@ -20,7 +20,7 @@ describe('saved game', () => {
   it('round-trips progress, settings and keepers', () => {
     const store = memory(), s = loadSave(beats, store);
     s.lang = 'zh'; s.sound = false;
-    Object.assign(s.scenes['02'], { beat: 2, lampZ: 61, markX: 3, takeNo: 4, beatTakes: [2, 2, 0] });
+    Object.assign(s.scenes['02'], { beat: 2, step: 'quiz', entered: true, lampZ: 61, markX: 3, takeNo: 4, beatTakes: [2, 2, 0] });
     s.scenes['02'].quiz.right = 1;
     s.scenes['02'].keepers.push({ beat: 'dark', lampZ: 61, markX: 3, match: 0.99, takes: 2, at: '2026-11-27T00:00:00.000Z' });
     storeSave(s, store);
@@ -31,11 +31,13 @@ describe('saved game', () => {
 
   it('survives garbage and out-of-range values', () => {
     for (const bad of ['not json', '[]', 'null', '{"scenes":7}', '{"scenes":{"02":"x"}}']) expect(loadSave(beats, memory(bad)).scenes['02']).toEqual(freshScene(3));
-    const s = loadSave(beats, memory(JSON.stringify({ lang: 'fr', sound: 'yes', scenes: { '02': { beat: 99, takeNo: -5, beatTakes: [1, 'x'], quiz: { right: 1e99 }, keepers: [null, { beat: 'dark', match: 7 }, 3], completed: 2.7 } } })));
+    const s = loadSave(beats, memory(JSON.stringify({ lang: 'fr', sound: 'yes', scenes: { '02': { beat: 99, step: 'credits', entered: 'yes', takeNo: -5, beatTakes: [1, 'x'], quiz: { right: 1e99 }, keepers: [null, { beat: 'dark', match: 7 }, 3], completed: 2.7 } } })));
     expect(s.lang).toBe('en');
     expect(s.sound).toBe(true);
     const sc = s.scenes['02'];
     expect(sc.beat).toBe(2);
+    expect(sc.step).toBe('block');
+    expect(sc.entered).toBe(false);
     expect(sc.takeNo).toBe(0);
     expect(sc.beatTakes).toEqual([1, 0, 0]);
     expect(sc.quiz.right).toBe(1e6);
