@@ -158,6 +158,10 @@ try {
   if ((await omt('o.beat')) !== 'dark' || Math.abs((await omt('o.setup.lampZ')) - 80) > 1) fail(`the lamp position was not kept across a reload: beat ${await omt('o.beat')}, lamp ${await omt('o.setup.lampZ')}`);
   v = await take('07-dark-cut');
   if (v.keeper) fail('lamp at 80 should be too small for the dark beat');
+  // After a blind miss the camera stays on the wall to show where the shadow fell.
+  await phase('review');
+  await wait(1400);
+  await shot('07b-dark-review');
   await phase('block');
   await wait(900);
   await shot('08-dark-trace');
@@ -216,6 +220,9 @@ try {
   if (await page.$('#over')) fail('a finished scene should not offer to continue');
   if ((await page.textContent('#btn-lang')) !== 'English') fail('the language choice was not remembered');
   await shot('15-fresh-after-wrap');
+
+  // A machine with a real GPU must not have been dropped to a lower resolution.
+  if (!SOFT && (await omt('o.pixelRatio')) !== 2) fail(`resolution was reduced to ${await omt('o.pixelRatio')}x on a fast machine`);
 
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
   for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);

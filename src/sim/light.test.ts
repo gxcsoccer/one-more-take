@@ -72,6 +72,9 @@ describe('scene 02 is playable', () => {
       console.log(`beat ${b.id}: keeper for lamp ${Math.min(...wins)}–${Math.max(...wins)} cm`);
       expect(wins.length).toBeGreaterThanOrEqual(5);
       expect(wins.length).toBeLessThanOrEqual(20);
+      // A keeper must look like one: the shadow's height is within 2 cm of the outline's.
+      const want = maskTop(maskOf(b.target), GRID);
+      for (const z of wins) if (b.rehearsalLight) expect(Math.abs(maskTop(maskOf({ lampZ: z, markX: b.target.markX }), GRID) - want)).toBeLessThanOrEqual(2);
     }
   });
 

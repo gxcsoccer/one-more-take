@@ -11,6 +11,8 @@ import { DUCK, inShadow, overlap, shadowMask, type Grid, type Pose, type Vec3 } 
 export interface Setup { lampZ: number; markX: number }
 
 export interface Beat {
+  /** Share of the outline a take must match here, when stricter than the scene's default. */
+  keeper?: number;
   id: 'play' | 'dark' | 'cat';
   /** Is the lamp lit while the player blocks the scene? */
   rehearsalLight: boolean;
@@ -36,7 +38,7 @@ export const scene02 = {
   /** How much of the outline a take must match to be a keeper. */
   keeper: 0.72,
   beats: [
-    { id: 'play', rehearsalLight: true, movable: ['lamp'], target: { lampZ: 72, markX: 3 }, start: { lampZ: 118, markX: 3 }, cat: false, objectives: ['L02', 'L04'] },
+    { id: 'play', keeper: 0.88, rehearsalLight: true, movable: ['lamp'], target: { lampZ: 72, markX: 3 }, start: { lampZ: 118, markX: 3 }, cat: false, objectives: ['L02', 'L04'] },
     { id: 'dark', rehearsalLight: false, movable: ['lamp'], target: { lampZ: 61, markX: 3 }, start: { lampZ: 118 }, cat: false, objectives: ['L02', 'L04', 'L05', 'I04'] },
     { id: 'cat', rehearsalLight: false, movable: ['lamp', 'mark'], target: { lampZ: 66, markX: -2 }, start: null, cat: true, objectives: ['L03', 'L04', 'L05', 'I01', 'I04'] },
   ] as Beat[],
@@ -63,5 +65,5 @@ export interface Verdict { match: number; catDark: boolean; keeper: boolean }
 export function judge(beat: Beat, s: Setup): Verdict {
   const match = overlap(maskOf(s), maskOf(beat.target));
   const catDark = beat.cat && catInShadow(s);
-  return { match, catDark, keeper: match >= scene02.keeper && !catDark };
+  return { match, catDark, keeper: match >= (beat.keeper ?? scene02.keeper) && !catDark };
 }

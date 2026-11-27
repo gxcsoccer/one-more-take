@@ -33,11 +33,13 @@ body.film #slate, body.film #top-right { opacity: 0; }
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: opacity .3s, bottom .5s;
 }
 #caption:empty { opacity: 0; }
-body.film #caption { bottom: 10.5vh; }
+/* While filming, the caption is one line inside the lower letterbox bar, clear of the picture. */
+body.film #caption { bottom: 1.4vh; max-width: 94vw; padding: calc(var(--u) * .5) calc(var(--u) * 1.6); background: none; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; font-size: calc(var(--u) * 1.9); white-space: nowrap; }
 .term { display: inline; padding: 0 .25em; border-radius: .35em; background: rgba(255, 207, 107, .18); color: var(--gold); font-weight: 800; border-bottom: 3px dotted var(--gold); }
 
-#burst { position: absolute; left: 0; right: 0; top: 13vh; text-align: center; }
-#burst b { display: block; font-size: calc(var(--u) * 10); font-weight: 900; letter-spacing: .02em; line-height: 1; color: #fff5e0; text-shadow: 0 .06em 0 #b3402e, 0 .14em .5em rgba(0, 0, 0, .55); animation: slam .5s cubic-bezier(.2, 1.5, .4, 1) both; }
+/* The verdict sits over the floor, below the building: never over the shadow being judged. */
+#burst { position: absolute; left: 0; right: 0; bottom: 11vh; text-align: center; }
+#burst b { display: block; font-size: calc(var(--u) * 7.5); font-weight: 900; letter-spacing: .02em; line-height: 1; color: #fff5e0; text-shadow: 0 .06em 0 #b3402e, 0 .14em .5em rgba(0, 0, 0, .55); animation: slam .5s cubic-bezier(.2, 1.5, .4, 1) both; }
 #burst.keeper b { color: var(--gold); text-shadow: 0 .06em 0 #9a6a14, 0 .14em .5em rgba(0, 0, 0, .55); }
 #burst span { display: inline-block; margin-top: calc(var(--u) * 1.2); padding: calc(var(--u) * .7) calc(var(--u) * 1.8); border-radius: 99px; background: var(--card); font-size: calc(var(--u) * 2.1); font-weight: 700; animation: rise .5s .25s both; }
 @keyframes slam { from { transform: scale(2.4) rotate(-6deg); opacity: 0; } to { transform: scale(1) rotate(-3deg); opacity: 1; } }
