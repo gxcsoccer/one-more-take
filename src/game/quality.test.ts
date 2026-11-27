@@ -36,6 +36,15 @@ describe('adaptive resolution', () => {
     expect([...run(q, 5, 45), ...run(q, 60, 2000)]).toEqual([]);
   });
 
+  it('keeps sampling back to back, so recurring slow stretches are not skipped as warm-up', () => {
+    const q = new AdaptiveResolution(2);
+    expect(run(q, 60, 105)).toEqual([]);
+    // 45 slow frames then 60 fast ones, repeated: about 36 fps overall.
+    const changes: number[] = [];
+    for (let i = 0; i < 6; i++) changes.push(...run(q, 24, 45), ...run(q, 60, 60));
+    expect(changes[0]).toBe(1.5);
+  });
+
   it('holds at a middle ratio once that is fast enough', () => {
     const q = new AdaptiveResolution(2);
     run(q, 30, 105);

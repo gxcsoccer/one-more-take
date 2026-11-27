@@ -26,9 +26,13 @@ export class AdaptiveResolution {
     if (this.frames > this.settle) this.slow += dt;
     if (this.frames < this.settle + this.window) return null;
     const average = this.slow / this.window;
-    this.frames = 0;
     this.slow = 0;
-    if (average <= this.budget) return null;
+    if (average <= this.budget) {
+      // Nothing changed, so nothing needs to settle: start the next window straight away.
+      this.frames = this.settle;
+      return null;
+    }
+    this.frames = 0;
     this.ratio = Math.max(this.floor, this.ratio - this.stepSize);
     return this.ratio;
   }
