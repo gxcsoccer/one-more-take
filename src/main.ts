@@ -11,6 +11,7 @@ import { setSound, sfx, soundOn, unlock } from './game/audio';
 import { record } from './evidence';
 import { lang, rich, setLang, t, terms } from './i18n';
 import { nextOpenQuestion, nextQuestion } from './game/questions';
+import { freshScene, inProgress, loadSave, storeSave } from './save';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -21,6 +22,8 @@ const FINE: Grid = { x0: S.wall.x0, y0: 0, cols: (S.wall.x1 - S.wall.x0) * 4, ro
 
 type Phase = 'intro' | 'block' | 'take' | 'quiz' | 'cameo' | 'wrap';
 
+const save = loadSave({ [S.id]: S.beats.length });
+const saved = () => save.scenes[S.id];
 const stage = new Stage($('stage'), S);
 void stage.loadArt(import.meta.env.BASE_URL);
 let phase: Phase = 'intro';
@@ -40,8 +43,15 @@ const covered: boolean[] = [];
 let lastVerdict: Verdict | null = null;
 const quizScore = { right: 0, asked: 0, marks: 0, outOf: 0 };
 let openKey: number[] = [];
+let wrapped = false;
 let quizAnswer = -1;
 const beat = (): Beat => S.beats[beatIx];
+
+/** Write where the child is, so closing the app loses nothing. */
+function persist() {
+  Object.assign(saved(), { beat: beatIx, lampZ: setup.lampZ, markX: setup.markX, takeNo, beatTakes: [...beatTakes], quiz: { ...quizScore } });
+  storeSave(save);
+}
 
 // ---------- words ----------
 function setHTML(el: HTMLElement, html: string) {
@@ -88,6 +98,7 @@ function enterBeat(ix: number) {
   chalk();
   stage.catVisible = b.cat;
   stage.movable = { lamp: b.movable.includes('lamp'), mark: b.movable.includes('mark') };
+  persist();
   backToBlocking();
 }
 
@@ -143,6 +154,8 @@ function runTake(dt: number) {
     const changed = lastSetup ? Number(Math.abs(lastSetup.lampZ - setup.lampZ) > 0.5) + Number(Math.abs(lastSetup.markX - setup.markX) > 0.25) : 0;
     record({ level: S.id, shot: b.id, kind: 'take', objectives: b.objectives, data: { take: beatTakes[beatIx], lampToDuck: Math.round(setup.lampZ - S.duck.z), markX: setup.markX, match: pct(v.match), keeper: v.keeper, blind: !b.rehearsalLight, changedSinceLast: changed } });
     lastSetup = { ...setup };
+    if (v.keeper) saved().keepers.push({ beat: b.id, lampZ: setup.lampZ, markX: setup.markX, match: v.match, takes: beatTakes[beatIx], at: new Date().toISOString() });
+    persist();
     if (v.keeper) {
       burst(t('keeper'), t('keeper.sub', { n: beatTakes[beatIx], p: pct(v.match) }), true);
       stage.celebrate();
@@ -193,6 +206,7 @@ function pressQuestion(then: () => void) {
     if (right) quizScore.right++;
     right ? sfx.win() : sfx.sulk();
     record({ level: S.id, shot: b.id, kind: 'quiz', objectives: q.objectives, data: { question: q.id, correct: right, chose: q.options[order[chosen]].en } });
+    persist();
   }));
   el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; then(); };
 }
@@ -241,24 +255,51 @@ function interview(then: () => void) {
     quizScore.outOf += total;
     got === total ? sfx.win() : sfx.tick();
     record({ level: S.id, shot: beat().id, kind: 'quiz', objectives: q.objectives, data: { question: q.id, marks: got, outOf: total } });
+    persist();
     el.scrollTop = el.scrollHeight;
   };
   el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; then(); };
 }
 
+function startOver() {
+  takeNo = 0;
+  beatTakes.fill(0);
+  quizScore.right = quizScore.asked = quizScore.marks = quizScore.outOf = 0;
+  stage.catSulking = false;
+  enterBeat(0);
+}
+
 function intro() {
   phase = 'intro';
-  const el = card(`<h1>${t('intro.h')}</h1><p>${rich('intro.p')}</p><button class="big" id="go">${t('go')}</button>`);
-  el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; enterBeat(0); };
+  const sv = saved(), resume = inProgress(sv);
+  const el = card(`<h1>${t('intro.h')}</h1><p>${rich('intro.p')}</p><button class="big" id="go">${resume ? t('resume', { n: sv.takeNo + 1 }) : t('go')}</button>${resume ? `<button class="big ghost" id="over">${t('restart')}</button>` : ''}`);
+  el.querySelector<HTMLElement>('#go')!.onclick = () => {
+    $('modal').hidden = true;
+    if (!resume) return startOver();
+    takeNo = sv.takeNo;
+    sv.beatTakes.forEach((n, i) => (beatTakes[i] = n));
+    Object.assign(quizScore, sv.quiz);
+    if (Number.isFinite(sv.lampZ)) setup.lampZ = sv.lampZ;
+    if (Number.isFinite(sv.markX)) setup.markX = sv.markX;
+    enterBeat(sv.beat);
+  };
+  const over = el.querySelector<HTMLElement>('#over');
+  if (over) over.onclick = () => { $('modal').hidden = true; startOver(); };
 }
 function wrap() {
   phase = 'wrap';
+  if (!wrapped) {
+    wrapped = true;
+    const sv = saved();
+    Object.assign(sv, { ...freshScene(S.beats.length), keepers: sv.keepers, completed: sv.completed + 1 });
+    storeSave(save);
+  }
   stage.film = false;
   stage.houseLights = 0.5;
   document.body.classList.remove('film');
   const rows = S.beats.map((b, i) => `<tr><td>${t(`wrap.${b.id}`)}</td><td>${t('takes', { n: beatTakes[i] })}</td></tr>`).join('');
   const el = card(`<h1>${t('wrap.h')}</h1><p>${rich('wrap.p')}</p><table>${rows}<tr><td colspan="2">${t('score', { r: quizScore.right, n: quizScore.asked })}</td></tr><tr><td colspan="2">${t('score.open', { m: quizScore.marks, n: quizScore.outOf })}</td></tr></table><button class="big" id="go">${t('replay')}</button>`);
-  el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; takeNo = 0; beatTakes.fill(0); quizScore.right = quizScore.asked = quizScore.marks = quizScore.outOf = 0; stage.catSulking = false; enterBeat(0); };
+  el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; wrapped = false; startOver(); };
 }
 
 // ---------- input ----------
@@ -285,8 +326,8 @@ canvas.addEventListener('pointermove', e => {
   else setup.markX = clamp(Math.round((p.x + drag.offset) * 4) / 4, S.duck.min, S.duck.max);
 });
 for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, () => (drag = null));
-$('btn-lang').onclick = () => { setLang(lang === 'en' ? 'zh' : 'en'); renderStatic(); if (phase === 'intro') intro(); if (phase === 'wrap') wrap(); };
-$('btn-sound').onclick = () => { setSound(!soundOn); renderStatic(); sfx.tick(); };
+$('btn-lang').onclick = () => { setLang(lang === 'en' ? 'zh' : 'en'); save.lang = lang; storeSave(save); renderStatic(); if (phase === 'intro') intro(); if (phase === 'wrap') wrap(); };
+$('btn-sound').onclick = () => { setSound(!soundOn); save.sound = soundOn; storeSave(save); renderStatic(); sfx.tick(); };
 document.addEventListener('click', e => {
   const pop = $('pop'), el = (e.target as HTMLElement).closest<HTMLElement>('.term');
   if (!el) { if (!(e.target as HTMLElement).closest('#pop')) pop.hidden = true; return; }
@@ -353,6 +394,7 @@ Object.assign(window, {
     get target() { return { ...beat().target }; },
     get quizAnswer() { return quizAnswer; },
     get openKey() { return [...openKey]; },
+    get saved() { return JSON.parse(JSON.stringify(saved())); },
     get handles() {
       return { lamp: stage.toClient(S.lamp.x, 5, setup.lampZ + 3), mark: stage.toClient(setup.markX, 3, S.duck.z + 8), clapper: stage.toClient(44, 8, 92) };
     },
@@ -361,7 +403,8 @@ Object.assign(window, {
   },
 });
 
-setLang('en');
+setLang(save.lang);
+setSound(save.sound);
 renderStatic();
 intro();
 requestAnimationFrame(frame);

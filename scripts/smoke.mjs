@@ -86,6 +86,18 @@ try {
 
   // Beat 2, lamp off while blocking.
   await page.waitForFunction(() => window.__omt.beat === 'dark' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
+
+  // Close and reopen the game: it must offer to continue from this beat, with the take count intact.
+  const before = await omt('o.takeNo');
+  await page.reload();
+  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
+  await wait(800);
+  await shot('05c-resume-card');
+  if (!(await page.$('#over'))) fail('after a reload mid-scene the intro should offer Start over next to Continue');
+  await page.click('#go');
+  await phase('block');
+  if ((await omt('o.beat')) !== 'dark') fail(`resume should land on the dark beat, got ${await omt('o.beat')}`);
+  if ((await omt('o.takeNo')) !== before) fail('resume lost the take count');
   await wait(1200);
   await shot('06-dark-block');
   await setLamp(80);
@@ -131,10 +143,21 @@ try {
   await wait(300);
   await shot('14-wrap-zh');
 
+  // A finished scene starts fresh next time, keeps its keepers, and remembers the language.
+  const sv = await omt('o.saved');
+  if (sv.completed !== 1 || sv.beat !== 0 || sv.takeNo !== 0) fail(`after the wrap the save should be reset and counted once: ${JSON.stringify(sv)}`);
+  if (sv.keepers.length !== 3) fail(`expected 3 saved keepers, got ${sv.keepers.length}`);
+  await page.reload();
+  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
+  await wait(600);
+  if (await page.$('#over')) fail('a finished scene should not offer to continue');
+  if ((await page.textContent('#btn-lang')) !== 'English') fail('the language choice was not remembered');
+  await shot('15-fresh-after-wrap');
+
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
   for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
   if (errors.length) fail(`page errors:\n${errors.join('\n')}`);
-  console.log(`smoke ok: ${await omt('o.takeNo')} takes across 3 beats`);
+  console.log(`smoke ok: 3 beats, ${sv.keepers.length} keepers saved, resume and fresh start checked`);
 } catch (e) {
   await shot('zz-failure').catch(() => {});
   console.error(String(e.message || e));

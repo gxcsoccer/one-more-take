@@ -90,3 +90,5 @@ body.film #caption { bottom: 10.5vh; }
 .blank button:disabled { cursor: default; }
 #mark { font-size: calc(var(--u) * 2.4); font-weight: 900; margin: 0 0 .5em; }
 .big:disabled { opacity: .4; }
+
+.big.ghost { margin-top: calc(var(--u) * 1.2); background: #e9dcbc; color: #2b2116; box-shadow: 0 .2em 0 #b8a67c; }
