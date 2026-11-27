@@ -13,6 +13,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DUCK, type Grid } from '../sim/light';
 import type { Scene02 } from './scene02';
+import { AdaptiveResolution } from './quality';
 
 const ease = (cur: number, to: number, dt: number, rate: number) => cur + (to - cur) * Math.min(1, dt * rate);
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -81,8 +82,9 @@ export class Stage {
   private squash = 0;
   private flicker = 0;
   private probe = { pr: 0, bloom: true, sm: 0 };
-  private frames = 0;
-  private slow = 0;
+  private quality = new AdaptiveResolution(1);
+  /** Lowest pixel ratio used since this page loaded. */
+  lowestRatio = 1;
   private filmCam = { pos: new THREE.Vector3(2, 50, 150), look: new THREE.Vector3(2, 25, 0) };
   /** "WxH" of the window the wide camera was last fitted to. */
   fitted = '';
@@ -98,6 +100,8 @@ export class Stage {
     this.probe = { pr: Number(knob.get('pr')) || 0, bloom: knob.get('bloom') !== '0', sm: Number(knob.get('sm')) || 0 };
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }));
     r.setPixelRatio(this.probe.pr || Math.min(window.devicePixelRatio || 1, 2));
+    this.quality = new AdaptiveResolution(r.getPixelRatio());
+    this.lowestRatio = r.getPixelRatio();
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
@@ -177,12 +181,13 @@ export class Stage {
         for (let a = 0; a < 3; a++) for (let b = 0; b < 6; b++) if ((i + a * 2 + b) % 4 === 0) k.fillRect(x + 5 + a * 10, 512 - h + 8 + b * 16, 5, 4);
       }
     });
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(1100, 275), (this.skins.sky = new THREE.MeshBasicMaterial({ map: sky, toneMapped: false, color: 0x9aa7a8 })));
-    back.position.set(0, 122, -110);
-    // Twice as wide as the painting: mirror it rather than stretch it, so nothing gets magnified.
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(1560, 260), (this.skins.sky = new THREE.MeshBasicMaterial({ map: sky, toneMapped: false, color: 0x9aa7a8 })));
+    back.position.set(0, 110, -70);
+    // Three paintings wide. The middle one is the painting exactly as painted and where it always
+    // was; the two outer ones are its mirror images, so the joins are seamless.
     sky.wrapS = THREE.MirroredRepeatWrapping;
-    sky.repeat.set(2, 1);
-    sky.offset.set(0.5, 0);
+    sky.repeat.set(3, 1);
+    sky.offset.set(-1, 0);
     this.scene.add(back);
     // Neighbouring cardboard blocks give the street some depth.
     const mat = new THREE.MeshStandardMaterial({ color: 0x5f8a80, roughness: 1 });
@@ -499,7 +504,7 @@ export class Stage {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
         if (slot === 'floor') { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 5); }
-        if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(2, 1); tex.offset.set(0.5, 0); }
+        if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(3, 1); tex.offset.set(-1, 0); }
         mat.map = tex;
         mat.needsUpdate = true;
       }
@@ -747,18 +752,14 @@ export class Stage {
 
     this.composer.render();
 
-    // If frames are slow, render fewer pixels. Never goes back up, so it settles quickly.
-    if (!this.probe.pr && this.renderer.getPixelRatio() > 1) {
-      this.frames++;
-      if (this.frames > 45) this.slow += dt;
-      if (this.frames >= 105) {
-        if (this.slow / 60 > 1 / 42) {
-          this.renderer.setPixelRatio(Math.max(1, this.renderer.getPixelRatio() - 0.5));
-          this.composer.setPixelRatio(this.renderer.getPixelRatio());
-          this.resize();
-        }
-        this.frames = 45;
-        this.slow = 0;
+    // If frames are slow, render fewer pixels.
+    if (!this.probe.pr) {
+      const next = this.quality.step(dt);
+      if (next !== null) {
+        this.renderer.setPixelRatio(next);
+        this.composer.setPixelRatio(next);
+        this.resize();
+        this.lowestRatio = Math.min(this.lowestRatio, next);
       }
     }
   }

@@ -64,7 +64,10 @@ async function pressQuestion(name, answerRight) {
 }
 
 // Close and reopen the game, then take the Continue button.
+const ratios = [];
 async function reopen(name) {
+  // A reload builds a new stage, so note how low this one went before it is gone.
+  ratios.push(await omt('o.lowestPixelRatio'));
   await page.reload();
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(700);
@@ -214,6 +217,7 @@ try {
   const sv = await omt('o.saved');
   if (sv.completed !== 1 || sv.beat !== 0 || sv.takeNo !== 0) fail(`after the wrap the save should be reset and counted once: ${JSON.stringify(sv)}`);
   if (sv.keepers.length !== 3) fail(`expected 3 saved keepers, got ${sv.keepers.length}`);
+  ratios.push(await omt('o.lowestPixelRatio'));
   await page.reload();
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(600);
@@ -222,7 +226,8 @@ try {
   await shot('15-fresh-after-wrap');
 
   // A machine with a real GPU must not have been dropped to a lower resolution.
-  if (!SOFT && (await omt('o.pixelRatio')) !== 2) fail(`resolution was reduced to ${await omt('o.pixelRatio')}x on a fast machine`);
+  ratios.push(await omt('o.lowestPixelRatio'));
+  if (!SOFT && Math.min(...ratios) !== 2) fail(`resolution was reduced on a fast machine: lowest ratios per page load were ${ratios.join(', ')}`);
 
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
   for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
