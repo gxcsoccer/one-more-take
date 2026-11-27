@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a1519">
+<link rel="icon" href="data:,">
+<title>One More Take!</title>
+</head>
+<body>
+<div id="stage"></div>
+<div id="bars"><i></i><i></i></div>
+<div id="hud">
+  <header id="slate"><b id="slate-title"></b><span id="slate-scene"></span></header>
+  <div id="top-right">
+    <button id="btn-lang" class="chip"></button>
+    <button id="btn-sound" class="chip" aria-pressed="true"></button>
+  </div>
+  <div id="burst" hidden><b id="burst-big"></b><span id="burst-sub"></span></div>
+  <div id="caption" role="status" aria-live="polite"></div>
+</div>
+<div id="pop" hidden></div>
+<div id="modal" hidden></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

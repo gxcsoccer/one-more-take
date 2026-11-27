@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1418">
+<link rel="icon" href="data:,">
+<title>One More Take!</title>
+</head>
+<body>
+<div id="frame">
+  <div id="stage"></div>
+  <div id="hud">
+    <header id="slate">
+      <div id="slate-title"></div>
+      <div id="slate-scene"></div>
+    </header>
+    <div id="top-right">
+      <button id="btn-lang" class="chip" aria-label="Language">中文</button>
+      <button id="btn-sound" class="chip" aria-pressed="true"></button>
+    </div>
+    <div id="mission" role="status" aria-live="polite"></div>
+    <div id="toast" hidden></div>
+    <aside id="panel">
+      <h2 id="nb-title"></h2>
+      <div id="nb-wrap">
+        <table id="nb">
+          <thead><tr><th id="th-take"></th><th id="th-gap"></th><th id="th-top"></th></tr></thead>
+          <tbody id="nb-rows"></tbody>
+        </table>
+        <p id="nb-empty"></p>
+      </div>
+      <div id="stamps"></div>
+      <div id="cutouts" hidden>
+        <span id="cutouts-label"></span>
+        <div class="row">
+          <button class="pick" data-cutout="side"></button>
+          <button class="pick" data-cutout="front"></button>
+          <button class="pick" data-cutout="draw"></button>
+        </div>
+      </div>
+      <div class="row">
+        <button id="btn-rays" class="tool" aria-pressed="false"></button>
+        <button id="btn-compare" class="tool" disabled></button>
+      </div>
+      <div class="row">
+        <button id="btn-replay" class="tool" disabled></button>
+        <button id="btn-next" class="tool go" hidden></button>
+      </div>
+      <button id="btn-lock" class="big" hidden></button>
+      <button id="btn-action" class="big action" hidden></button>
+    </aside>
+    <div id="cine" hidden>
+      <span id="cine-left"></span>
+      <span id="cine-right"></span>
+    </div>
+  </div>
+  <div id="pop" hidden></div>
+  <div id="modal" hidden></div>
+</div>
+<script type="module" src="/src/v1/main.ts"></script>
+</body>
+</html>
