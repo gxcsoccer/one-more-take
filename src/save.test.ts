@@ -20,13 +20,21 @@ describe('saved game', () => {
   it('round-trips progress, settings and keepers', () => {
     const store = memory(), s = loadSave(beats, store);
     s.lang = 'zh'; s.sound = false;
-    Object.assign(s.scenes['02'], { beat: 2, step: 'quiz', entered: true, lampZ: 61, markX: 3, takeNo: 4, beatTakes: [2, 2, 0] });
+    Object.assign(s.scenes['02'], { beat: 2, step: 'quiz', entered: true, touched: true, lampZ: 61, markX: 3, takeNo: 4, beatTakes: [2, 2, 0] });
     s.scenes['02'].quiz.right = 1;
     s.scenes['02'].keepers.push({ beat: 'dark', lampZ: 61, markX: 3, match: 0.99, takes: 2, at: '2026-11-27T00:00:00.000Z' });
     storeSave(s, store);
     const back = loadSave(beats, store);
     expect(back).toEqual(s);
     expect(inProgress(back.scenes['02'])).toBe(true);
+  });
+
+  it('a first beat with a moved prop but no take yet is worth resuming', () => {
+    const s = loadSave(beats, memory()).scenes['02'];
+    s.entered = true;
+    expect(inProgress(s)).toBe(false);
+    s.touched = true;
+    expect(inProgress(s)).toBe(true);
   });
 
   it('survives garbage and out-of-range values', () => {

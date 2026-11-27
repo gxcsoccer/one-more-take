@@ -44,7 +44,7 @@ let lastVerdict: Verdict | null = null;
 const quizScore = { right: 0, asked: 0, marks: 0, outOf: 0 };
 let openKey: number[] = [];
 /** The point a reload should return to. It moves forward only at moments that must not be repeated. */
-const checkpoint: { beat: number; step: Step; entered: boolean } = { beat: 0, step: 'block', entered: false };
+const checkpoint: { beat: number; step: Step; entered: boolean; touched: boolean } = { beat: 0, step: 'block', entered: false, touched: false };
 let quizAnswer = -1;
 const beat = (): Beat => S.beats[beatIx];
 
@@ -100,7 +100,7 @@ function enterBeat(ix: number, resumed = false) {
   chalk();
   stage.catVisible = b.cat;
   stage.movable = { lamp: b.movable.includes('lamp'), mark: b.movable.includes('mark') };
-  Object.assign(checkpoint, { beat: ix, step: 'block', entered: true });
+  Object.assign(checkpoint, { beat: ix, step: 'block', entered: true, touched: resumed && checkpoint.touched });
   persist();
   backToBlocking();
 }
@@ -220,7 +220,7 @@ function pressQuestion(then: () => void) {
     right ? sfx.win() : sfx.sulk();
     record({ level: S.id, shot: b.id, kind: 'quiz', objectives: q.objectives, data: { question: q.id, correct: right, chose: q.options[order[chosen]].en } });
     // Answered: a reload now goes on to the next beat (or the closing question), and never asks this one again.
-    if (beatIx < S.beats.length - 1) Object.assign(checkpoint, { beat: beatIx + 1, step: 'block', entered: false });
+    if (beatIx < S.beats.length - 1) Object.assign(checkpoint, { beat: beatIx + 1, step: 'block', entered: false, touched: false });
     else checkpoint.step = 'interview';
     persist();
   }));
@@ -274,7 +274,7 @@ function interview(then: () => void) {
     // Handed in: the scene is complete. It is counted once, keeps its keepers, and the next visit starts fresh.
     const sv = saved();
     Object.assign(sv, { ...freshScene(S.beats.length), keepers: sv.keepers, completed: sv.completed + 1 });
-    Object.assign(checkpoint, { beat: 0, step: 'block', entered: false });
+    Object.assign(checkpoint, { beat: 0, step: 'block', entered: false, touched: false });
     storeSave(save);
     el.scrollTop = el.scrollHeight;
   };
@@ -302,6 +302,7 @@ function intro() {
     if (Number.isFinite(sv.lampZ)) setup.lampZ = sv.lampZ;
     if (Number.isFinite(sv.markX)) setup.markX = sv.markX;
     const step = sv.step;
+    checkpoint.touched = sv.touched;
     enterBeat(sv.beat, sv.entered || step !== 'block');
     if (step === 'block') return;
     // The shot was already in the can: go straight to its question instead of re-shooting.
@@ -347,7 +348,7 @@ canvas.addEventListener('pointermove', e => {
   else setup.markX = clamp(Math.round((p.x + drag.offset) * 4) / 4, S.duck.min, S.duck.max);
 });
 // Letting go of a prop saves where it was put; so does leaving the page mid-drag.
-const drop = () => { if (drag) { drag = null; if (phase === 'block') persist(); } };
+const drop = () => { if (drag) { drag = null; if (phase === 'block') { checkpoint.touched = true; persist(); } } };
 for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, drop);
 window.addEventListener('pagehide', drop);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && drop());
