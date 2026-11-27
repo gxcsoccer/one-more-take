@@ -106,6 +106,13 @@ try {
   await page.waitForFunction(() => window.__omt.hint, null, { timeout: 8000 * SLOW });
   await shot('02c-hint');
 
+  // Move the lamp before any take, then reload: even that much is offered back, with the lamp where it was put.
+  await setLamp(90);
+  await reopen();
+  await phase('block');
+  if ((await omt('o.beat')) !== 'play' || Math.abs((await omt('o.setup.lampZ')) - 90) > 1 || (await omt('o.takeNo')) !== 0) fail(`a moved lamp before the first take was not kept: lamp ${await omt('o.setup.lampZ')}`);
+  await setLamp(118);
+
   // Beat 1, lamp lit: a set-up that does not fit is a CUT, the fitting one is a keeper.
   let v = await take('03-play-cut');
   if (v.keeper) fail('the opening set-up should not be a keeper');

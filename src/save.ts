@@ -28,6 +28,8 @@ export interface SceneSave {
   step: Step;
   /** Has the child already been set down in this beat? If so its opening prop positions must not be re-applied. */
   entered: boolean;
+  /** Has the child moved a prop since entering this beat? Enough to be worth resuming, even before the first take. */
+  touched: boolean;
   lampZ: number;
   markX: number;
   takeNo: number;
@@ -52,7 +54,7 @@ const num = (v: unknown, fallback: number, lo = -Infinity, hi = Infinity) => (ty
 const count = (v: unknown) => Math.floor(num(v, 0, 0, 1e6));
 
 export function freshScene(beats: number): SceneSave {
-  return { beat: 0, step: 'block', entered: false, lampZ: NaN, markX: NaN, takeNo: 0, beatTakes: new Array(beats).fill(0), quiz: { right: 0, asked: 0, marks: 0, outOf: 0 }, keepers: [], completed: 0 };
+  return { beat: 0, step: 'block', entered: false, touched: false, lampZ: NaN, markX: NaN, takeNo: 0, beatTakes: new Array(beats).fill(0), quiz: { right: 0, asked: 0, marks: 0, outOf: 0 }, keepers: [], completed: 0 };
 }
 
 function readScene(raw: unknown, beats: number): SceneSave {
@@ -62,6 +64,7 @@ function readScene(raw: unknown, beats: number): SceneSave {
   s.beat = Math.floor(num(r.beat, 0, 0, beats - 1));
   s.step = r.step === 'quiz' || r.step === 'interview' ? r.step : 'block';
   s.entered = r.entered === true;
+  s.touched = r.touched === true;
   s.lampZ = num(r.lampZ, NaN);
   s.markX = num(r.markX, NaN);
   s.takeNo = count(r.takeNo);
@@ -99,7 +102,7 @@ export function storeSave(save: Save, store: Store | null = safeStore()) {
 }
 
 /** Has the child got somewhere worth resuming? */
-export const inProgress = (s: SceneSave) => s.beat > 0 || s.takeNo > 0 || s.step !== 'block';
+export const inProgress = (s: SceneSave) => s.beat > 0 || s.takeNo > 0 || s.step !== 'block' || (s.entered && s.touched);
 
 function safeStore(): Store | null {
   try {
