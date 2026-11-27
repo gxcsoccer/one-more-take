@@ -9,12 +9,12 @@ const out = 'qa-out';
 mkdirSync(out, { recursive: true });
 const server = await createServer({ server: { port: 5199, strictPort: false }, logLevel: 'error' });
 await server.listen();
-// CI machines have no GPU: render in software, at 1x, and allow far more time,
-// because the game then runs in slow motion.
-const CI = !!process.env.CI, SLOW = CI ? 8 : 1;
-const gpu = process.platform === 'darwin' && !CI ? ['--use-angle=metal', '--enable-gpu'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+// Without a usable GPU (CI, and any machine that is not a Mac) the game is
+// rendered in software and runs in slow motion: use 1x and allow far more time.
+const SOFT = !!process.env.CI || process.platform !== 'darwin', SLOW = SOFT ? 8 : 1;
+const gpu = SOFT ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-angle=metal', '--enable-gpu'];
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: [...gpu, '--ignore-gpu-blocklist'] });
-const page = await browser.newPage({ viewport: CI ? { width: 1024, height: 768 } : { width: 1180, height: 820 }, deviceScaleFactor: CI ? 1 : 2, hasTouch: true });
+const page = await browser.newPage({ viewport: SOFT ? { width: 1024, height: 768 } : { width: 1180, height: 820 }, deviceScaleFactor: SOFT ? 1 : 2, hasTouch: true });
 page.setDefaultTimeout(30000 * SLOW);
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
