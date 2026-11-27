@@ -84,6 +84,28 @@ try {
   await wait(900);
   await shot('02-play-start');
 
+  // Whatever the window shape, the lamp and the clapperboard must be on screen and clear of the HUD,
+  // and an idle player must be shown what to drag.
+  const home = page.viewportSize();
+  for (const [w, h] of [[1024, 768], [1180, 820], [1600, 900], [2000, 1100], [1366, 1024]]) {
+    await page.setViewportSize({ width: w, height: h });
+    // Read positions only once the game has refitted its camera to this size; a fixed pause is not
+    // enough on a slow machine.
+    await page.waitForFunction(size => window.__omt.fitted === size, `${w}x${h}`, { timeout: 15000 * SLOW });
+    await wait(150);
+    const hs = await omt('o.handles');
+    const cap = await page.evaluate(() => document.getElementById('caption').getBoundingClientRect().toJSON());
+    const top = await page.evaluate(() => document.getElementById('top-right').getBoundingClientRect().toJSON());
+    for (const [name, p] of Object.entries({ lamp: hs.lamp, clapper: hs.clapper })) {
+      if (p.x < 30 || p.x > w - 30 || p.y < top.bottom + 10 || p.y > cap.top - 20) fail(`${w}x${h}: the ${name} is off screen or under the HUD at (${Math.round(p.x)}, ${Math.round(p.y)}); caption starts at ${Math.round(cap.top)}`);
+    }
+    if (w === 2000) await shot('02b-wide-window');
+  }
+  await page.setViewportSize(home);
+  await page.waitForFunction(size => window.__omt.fitted === size, `${home.width}x${home.height}`, { timeout: 15000 * SLOW });
+  await page.waitForFunction(() => window.__omt.hint, null, { timeout: 8000 * SLOW });
+  await shot('02c-hint');
+
   // Move the lamp before any take, then reload: even that much is offered back, with the lamp where it was put.
   await setLamp(90);
   await reopen();
@@ -122,6 +144,13 @@ try {
 
   await wait(1200);
   await shot('06-dark-block');
+  // With the lamp off the hand may only show that the lamp can be dragged. Sample it over a cycle:
+  // it must travel to both sides of the lamp, not towards the answer.
+  await page.waitForFunction(() => window.__omt.hint, null, { timeout: 8000 * SLOW });
+  const lampX = (await omt('o.handles.lamp')).x, xs = [];
+  for (let i = 0; i < 24; i++) { const r = await omt('o.hint'); if (r) xs.push(r.x + r.width / 2); await wait(110 * (SLOW > 1 ? 3 : 1)); }
+  if (!(Math.min(...xs) < lampX - 8 && Math.max(...xs) > lampX + 8)) fail(`in the dark the hint should rock both ways around the lamp at x=${Math.round(lampX)}, saw ${Math.round(Math.min(...xs))}..${Math.round(Math.max(...xs))}`);
+  await shot('06b-dark-hint');
   // Move the lamp in the dark, reload: it must still be where the child left it, not back at the far end.
   await setLamp(80);
   await reopen();

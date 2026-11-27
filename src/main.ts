@@ -43,6 +43,9 @@ const covered: boolean[] = [];
 let lastVerdict: Verdict | null = null;
 const quizScore = { right: 0, asked: 0, marks: 0, outOf: 0 };
 let openKey: number[] = [];
+/** Seconds since the player last touched the set, and what they have moved since blocking began. */
+let idle = 0;
+const moved = { lamp: false, mark: false };
 /** The point a reload should return to. It moves forward only at moments that must not be repeated. */
 const checkpoint: { beat: number; step: Step; entered: boolean; touched: boolean } = { beat: 0, step: 'block', entered: false, touched: false };
 let quizAnswer = -1;
@@ -108,6 +111,8 @@ function enterBeat(ix: number, resumed = false) {
 function backToBlocking() {
   const b = beat();
   phase = 'block';
+  idle = 0;
+  moved.lamp = moved.mark = false;
   stage.film = false;
   document.body.classList.remove('film');
   stage.lampOn = b.rehearsalLight;
@@ -329,6 +334,7 @@ const canvas = stage.renderer.domElement;
 window.addEventListener('pointerdown', unlock, { capture: true });
 canvas.addEventListener('pointerdown', e => {
   $('pop').hidden = true;
+  idle = 0;
   if (phase !== 'block') return;
   const what: Pickable | null = stage.pick(e.clientX, e.clientY);
   if (what === 'clapper') return action();
@@ -344,6 +350,8 @@ canvas.addEventListener('pointermove', e => {
   if (!drag || phase !== 'block') return;
   const p = stage.tablePoint(e.clientX, e.clientY);
   if (!p) return;
+  idle = 0;
+  moved[drag.what] = true;
   if (drag.what === 'lamp') setup.lampZ = clamp(p.z + drag.offset, S.lamp.min, S.lamp.max);
   else setup.markX = clamp(Math.round((p.x + drag.offset) * 4) / 4, S.duck.min, S.duck.max);
 });
@@ -367,6 +375,54 @@ document.addEventListener('click', e => {
     try { const u = new SpeechSynthesisUtterance(term.en); u.lang = 'en-GB'; speechSynthesis.speak(u); } catch { /* no speech here */ }
   };
 });
+
+// ---------- the demonstrating hand ----------
+type Pt = { x: number; y: number };
+/**
+ * What the hand should show right now, or null to hide it.
+ *   to    – drag from `from` to `to` (lit beats, where the shadow is visible anyway)
+ *   sway  – rock between two points either side of `from`: "this can be dragged", no direction implied
+ *   neither – tap
+ */
+function hintNow(): { from: Pt; to?: Pt; sway?: [Pt, Pt] } | null {
+  if (phase !== 'block' || drag || idle < 2.5 || !$('modal').hidden) return null;
+  const b = beat(), lampAt = (z: number) => stage.toClient(S.lamp.x, 5, clamp(z, S.lamp.min, S.lamp.max) + 3), markAt = (x: number) => stage.toClient(clamp(x, S.duck.min, S.duck.max), 3, S.duck.z + 8);
+  const tap = { from: stage.toClient(44, 9, 92) };
+  if (b.rehearsalLight) {
+    if (stage.clapperReady) return tap;
+    // Lights on: the child can see the shadow, so showing which way to go gives nothing away.
+    return { from: lampAt(setup.lampZ), to: lampAt(setup.lampZ + (b.target.lampZ < setup.lampZ ? -26 : 26)) };
+  }
+  // Lights out: the set-up is the prediction. Never read the target here.
+  if (!moved.lamp) return { from: lampAt(setup.lampZ), sway: [lampAt(setup.lampZ - 14), lampAt(setup.lampZ + 14)] };
+  if (b.movable.includes('mark') && !moved.mark) return { from: markAt(setup.markX), sway: [markAt(setup.markX - 4), markAt(setup.markX + 4)] };
+  return idle > 5 ? tap : null;
+}
+let hintClock = 0;
+function drawHint(dt: number) {
+  const el = $('hint'), h = hintNow();
+  if (!h) { el.hidden = true; hintClock = 0; return; }
+  hintClock += dt;
+  const u = (hintClock % 2.4) / 2.4;
+  let x = h.from.x, y = h.from.y, scale = 1, alpha = 1;
+  if (h.to) {
+    // Press, drag, lift, pause.
+    const k = clamp((u - 0.15) / 0.55, 0, 1), e = k * k * (3 - 2 * k);
+    x += (h.to.x - h.from.x) * e; y += (h.to.y - h.from.y) * e;
+    scale = u < 0.15 ? 1.15 - u : 1;
+    alpha = u > 0.8 ? 1 - (u - 0.8) / 0.2 : Math.min(1, u / 0.08);
+  } else if (h.sway) {
+    // Rock from one side to the other and back.
+    const k = (Math.sin(u * Math.PI * 2) + 1) / 2;
+    x = h.sway[0].x + (h.sway[1].x - h.sway[0].x) * k; y = h.sway[0].y + (h.sway[1].y - h.sway[0].y) * k;
+  } else {
+    scale = 1 + 0.16 * Math.sin(u * Math.PI * 4);
+  }
+  el.hidden = false;
+  el.style.opacity = String(alpha);
+  // The fingertip of the emoji sits at its top centre.
+  el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -8%) scale(${scale})`;
+}
 
 // ---------- loop ----------
 let prev = performance.now();
@@ -404,8 +460,10 @@ function frame(now: number) {
   } else covered.fill(false);
 
   if (burstT > 0 && (burstT -= dt) <= 0) $('burst').hidden = true;
+  idle += dt;
   setHTML($('caption'), caption());
   stage.update(dt);
+  drawHint(dt);
   requestAnimationFrame(frame);
 }
 
@@ -421,6 +479,9 @@ Object.assign(window, {
     get quizAnswer() { return quizAnswer; },
     get openKey() { return [...openKey]; },
     get saved() { return JSON.parse(JSON.stringify(saved())); },
+    get hint() { const h = $('hint'); return h.hidden ? null : h.getBoundingClientRect().toJSON(); },
+    /** Window size the camera was last fitted to, so a test can wait for a resize to be applied. */
+    get fitted() { return stage.fitted; },
     get handles() {
       return { lamp: stage.toClient(S.lamp.x, 5, setup.lampZ + 3), mark: stage.toClient(setup.markX, 3, S.duck.z + 8), clapper: stage.toClient(44, 8, 92) };
     },

@@ -80,6 +80,9 @@ export class Stage {
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
   private flicker = 0;
+  /** "WxH" of the window the wide camera was last fitted to. */
+  fitted = '';
+  private wide = { pos: new THREE.Vector3(-74, 62, 206), look: new THREE.Vector3(10, 15, 36) };
   private skins: Record<string, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = {};
 
   constructor(private host: HTMLElement, private L: Scene02) {
@@ -308,7 +311,7 @@ export class Stage {
   }
 
   private buildLamp() {
-    const dark = new THREE.MeshPhysicalMaterial({ color: 0xc8432f, roughness: 0.4, clearcoat: 0.6 });
+    const dark = new THREE.MeshPhysicalMaterial({ color: 0xc8432f, roughness: 0.4, clearcoat: 0.6, emissive: 0x7a1d10, emissiveIntensity: 0.55 });
     const trim = new THREE.MeshStandardMaterial({ color: 0xc9b98f, roughness: 0.35, metalness: 0.8 });
     const dolly = new THREE.Mesh(new THREE.BoxGeometry(7.4, 1.2, 9), dark);
     dolly.position.set(0, 1.5, 4.5);
@@ -576,19 +579,48 @@ export class Stage {
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
+    this.fitWide();
     this.placeCamera();
+    this.fitted = `${w}x${h}`;
+  }
+
+  /**
+   * Wide view: pull the camera back until everything the player must reach is
+   * on screen and clear of the HUD (title and buttons on top, caption below),
+   * whatever the shape of the window.
+   */
+  private fitWide() {
+    const L = this.L, W = L.wall;
+    const must = [
+      [L.lamp.x - 7, 0, L.lamp.max + 13], [L.lamp.x + 11, 0, L.lamp.max + 13], [L.lamp.x, 9, L.lamp.max],
+      [W.x0 - 6, 0, 0], [W.x0 - 6, W.height + 7, -5], [W.x1 + 2, W.height + 7, -5], [W.x1 + 2, 0, 0],
+      [54, 18, 92], [54, 0, 99],
+      [L.duck.enterFrom - 10, 0, L.duck.z + 5], [L.duck.enterFrom - 10, 17, L.duck.z],
+    ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const look = new THREE.Vector3(8, 10, 56), dir = new THREE.Vector3(-84, 47, 170).normalize(), pos = new THREE.Vector3(), v = new THREE.Vector3();
+    this.camera.fov = 30;
+    for (let d = 150; d <= 560; d += 4) {
+      pos.copy(look).addScaledVector(dir, d);
+      this.camera.position.copy(pos);
+      this.camera.lookAt(look);
+      this.camera.updateProjectionMatrix();
+      this.camera.updateMatrixWorld();
+      if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > -0.6 && v.y < 0.78; })) break;
+    }
+    this.wide = { pos: pos.clone(), look };
   }
 
   private placeCamera() {
     const t = smooth(this.filmT), a = this.camera.aspect;
     // Wide: three-quarter view of the whole table. Film: square-on to the wall, like the movie camera.
-    const pos = new THREE.Vector3(-74, 62, 206).lerp(new THREE.Vector3(2, 38, 140), t);
-    const look = new THREE.Vector3(10, 15, 36).lerp(new THREE.Vector3(2, 23, 0), t);
-    const hfov = THREE.MathUtils.lerp(46, 44, t);
-    this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hfov / 2)) / Math.max(a, 1.1)));
+    const pos = this.wide.pos.clone().lerp(new THREE.Vector3(2, 38, 140), t);
+    const look = this.wide.look.clone().lerp(new THREE.Vector3(2, 23, 0), t);
+    const filmFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(22)) / Math.max(a, 1.1)));
+    this.camera.fov = THREE.MathUtils.lerp(30, filmFov, t);
     this.camera.position.copy(pos);
     this.camera.lookAt(look);
     this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld();
   }
 
   // ---------- every frame ----------
