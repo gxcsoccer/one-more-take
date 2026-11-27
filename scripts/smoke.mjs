@@ -64,7 +64,10 @@ async function pressQuestion(name, answerRight) {
 }
 
 // Close and reopen the game, then take the Continue button.
+const ratios = [];
 async function reopen(name) {
+  // A reload builds a new stage, so note how low this one went before it is gone.
+  ratios.push(await omt('o.lowestPixelRatio'));
   await page.reload();
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(700);
@@ -158,6 +161,10 @@ try {
   if ((await omt('o.beat')) !== 'dark' || Math.abs((await omt('o.setup.lampZ')) - 80) > 1) fail(`the lamp position was not kept across a reload: beat ${await omt('o.beat')}, lamp ${await omt('o.setup.lampZ')}`);
   v = await take('07-dark-cut');
   if (v.keeper) fail('lamp at 80 should be too small for the dark beat');
+  // After a blind miss the camera stays on the wall to show where the shadow fell.
+  await phase('review');
+  await wait(1400);
+  await shot('07b-dark-review');
   await phase('block');
   await wait(900);
   await shot('08-dark-trace');
@@ -210,12 +217,17 @@ try {
   const sv = await omt('o.saved');
   if (sv.completed !== 1 || sv.beat !== 0 || sv.takeNo !== 0) fail(`after the wrap the save should be reset and counted once: ${JSON.stringify(sv)}`);
   if (sv.keepers.length !== 3) fail(`expected 3 saved keepers, got ${sv.keepers.length}`);
+  ratios.push(await omt('o.lowestPixelRatio'));
   await page.reload();
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(600);
   if (await page.$('#over')) fail('a finished scene should not offer to continue');
   if ((await page.textContent('#btn-lang')) !== 'English') fail('the language choice was not remembered');
   await shot('15-fresh-after-wrap');
+
+  // A machine with a real GPU must not have been dropped to a lower resolution.
+  ratios.push(await omt('o.lowestPixelRatio'));
+  if (!SOFT && Math.min(...ratios) !== 2) fail(`resolution was reduced on a fast machine: lowest ratios per page load were ${ratios.join(', ')}`);
 
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
   for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);

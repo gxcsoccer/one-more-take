@@ -13,6 +13,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DUCK, type Grid } from '../sim/light';
 import type { Scene02 } from './scene02';
+import { AdaptiveResolution } from './quality';
 
 const ease = (cur: number, to: number, dt: number, rate: number) => cur + (to - cur) * Math.min(1, dt * rate);
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -80,6 +81,11 @@ export class Stage {
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
   private flicker = 0;
+  private probe = { pr: 0, bloom: true, sm: 0 };
+  private quality = new AdaptiveResolution(1);
+  /** Lowest pixel ratio used since this page loaded. */
+  lowestRatio = 1;
+  private filmCam = { pos: new THREE.Vector3(2, 50, 150), look: new THREE.Vector3(2, 25, 0) };
   /** "WxH" of the window the wide camera was last fitted to. */
   fitted = '';
   private wide = { pos: new THREE.Vector3(-74, 62, 206), look: new THREE.Vector3(10, 15, 36) };
@@ -89,14 +95,19 @@ export class Stage {
     this.lampZ = L.lamp.max;
     this.markX = 0;
     this.duckX = 0;
+    // Probe knobs for scripts/perf.mjs: ?pr=<pixel ratio cap>&bloom=0&sm=<shadow map size>
+    const knob = new URLSearchParams(location.search);
+    this.probe = { pr: Number(knob.get('pr')) || 0, bloom: knob.get('bloom') !== '0', sm: Number(knob.get('sm')) || 0 };
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }));
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    r.setPixelRatio(this.probe.pr || Math.min(window.devicePixelRatio || 1, 2));
+    this.quality = new AdaptiveResolution(r.getPixelRatio());
+    this.lowestRatio = r.getPixelRatio();
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1;
     host.appendChild(r.domElement);
-    this.scene.background = new THREE.Color(0x0a1519);
+    this.scene.background = new THREE.Color(0x0f2d31);
     this.scene.fog = new THREE.Fog(0x0a1519, 420, 900);
 
     this.buildLights();
@@ -115,7 +126,7 @@ export class Stage {
     this.composer = new EffectComposer(r);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.6, 0.9);
-    this.composer.addPass(this.bloom);
+    if (this.probe.bloom) this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -128,7 +139,7 @@ export class Stage {
     this.work.position.set(-90, 160, 140);
     const s = (this.spot = new THREE.SpotLight(0xffdfa6, 0, 0, 0.72, 0.45, 0));
     s.castShadow = true;
-    s.shadow.mapSize.set(2048, 2048);
+    s.shadow.mapSize.set(this.probe.sm || 2048, this.probe.sm || 2048);
     s.shadow.camera.near = 2;
     s.shadow.camera.far = 260;
     s.shadow.bias = -0.0004;
@@ -170,12 +181,17 @@ export class Stage {
         for (let a = 0; a < 3; a++) for (let b = 0; b < 6; b++) if ((i + a * 2 + b) % 4 === 0) k.fillRect(x + 5 + a * 10, 512 - h + 8 + b * 16, 5, 4);
       }
     });
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(520, 260), (this.skins.sky = new THREE.MeshBasicMaterial({ map: sky, toneMapped: false, color: 0x9aa7a8 })));
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(1560, 260), (this.skins.sky = new THREE.MeshBasicMaterial({ map: sky, toneMapped: false, color: 0x9aa7a8 })));
     back.position.set(0, 110, -70);
+    // Three paintings wide. The middle one is the painting exactly as painted and where it always
+    // was; the two outer ones are its mirror images, so the joins are seamless.
+    sky.wrapS = THREE.MirroredRepeatWrapping;
+    sky.repeat.set(3, 1);
+    sky.offset.set(-1, 0);
     this.scene.add(back);
     // Neighbouring cardboard blocks give the street some depth.
-    const mat = new THREE.MeshStandardMaterial({ color: 0x4d7473, roughness: 1 });
-    for (const [x, w, h, z] of [[-78, 44, 40, -14], [-118, 40, 62, -26], [78, 46, 34, -12], [118, 40, 70, -28]] as const) {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x5f8a80, roughness: 1 });
+    for (const [x, w, h, z] of [[-80, 44, 36, -16], [-124, 40, 50, -30], [80, 46, 30, -14], [126, 40, 46, -32]] as const) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 14), mat);
       b.position.set(x, h / 2, z);
       b.receiveShadow = true;
@@ -302,8 +318,16 @@ export class Stage {
     const tapeMat = new THREE.MeshStandardMaterial({ color: 0xff7a59, roughness: 0.7 });
     const a = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 1.1), tapeMat), b = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 9), tapeMat);
     b.position.z = 3.6;
-    const pin = new THREE.Mesh(new THREE.SphereGeometry(1.8, 20, 14), new THREE.MeshPhysicalMaterial({ color: 0xff7a59, roughness: 0.25, clearcoat: 1 }));
-    pin.position.set(0, 1.8, 8.6);
+    const pin = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 10, 10), new THREE.MeshStandardMaterial({ color: 0xf3e7c9, roughness: 0.6 }));
+    pole.position.y = 5;
+    const flagShape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(5.4, -1.7), new THREE.Vector2(0, -3.4)]);
+    const flag = new THREE.Mesh(new THREE.ShapeGeometry(flagShape), new THREE.MeshStandardMaterial({ color: 0xff7a59, roughness: 0.7, side: THREE.DoubleSide, emissive: 0x7a2a16, emissiveIntensity: 0.5 }));
+    flag.position.set(0.2, 10, 0);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 0.6, 20), new THREE.MeshPhysicalMaterial({ color: 0xff7a59, roughness: 0.3, clearcoat: 1 }));
+    foot.position.y = 0.3;
+    pin.add(pole, flag, foot);
+    pin.position.set(0, 0, 8.6);
     pin.castShadow = false;
     this.mark.add(a, b, pin);
     this.mark.position.set(0, 0.07, L.duck.z);
@@ -480,6 +504,7 @@ export class Stage {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
         if (slot === 'floor') { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 5); }
+        if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(3, 1); tex.offset.set(-1, 0); }
         mat.map = tex;
         mat.needsUpdate = true;
       }
@@ -531,8 +556,8 @@ export class Stage {
     if (trace) {
       const [c, ck] = layer();
       ck.drawImage(stamp(trace), 0, 0, W, H);
-      ck.globalCompositeOperation = 'source-in'; ck.fillStyle = 'rgba(190,225,255,.5)'; ck.fillRect(0, 0, W, H);
-      stripes(ck, 4, 7);
+      ck.globalCompositeOperation = 'source-in'; ck.fillStyle = 'rgba(70,150,255,.72)'; ck.fillRect(0, 0, W, H);
+      stripes(ck, 7, 5);
       k.drawImage(c, 0, 0);
     }
     if (outline) {
@@ -608,15 +633,30 @@ export class Stage {
       if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > -0.6 && v.y < 0.78; })) break;
     }
     this.wide = { pos: pos.clone(), look };
+
+    // Film view: square-on to the wall from above the lamp, far enough back that the whole
+    // building sits between the letterbox bars.
+    const corners = [[W.x0 - 5, -1, 0], [W.x1 + 3, -1, 0], [W.x0 - 5, W.height + 4, 0], [W.x1 + 3, W.height + 4, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const flook = new THREE.Vector3(2, 25, 0), fpos = new THREE.Vector3();
+    this.camera.fov = 34;
+    for (let d = 100; d <= 420; d += 4) {
+      fpos.set(2, 50, d);
+      this.camera.position.copy(fpos);
+      this.camera.lookAt(flook);
+      this.camera.updateProjectionMatrix();
+      this.camera.updateMatrixWorld();
+      if (corners.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.96 && Math.abs(v.y) < 0.8; })) break;
+    }
+    this.filmCam = { pos: fpos.clone(), look: flook };
   }
 
   private placeCamera() {
     const t = smooth(this.filmT), a = this.camera.aspect;
     // Wide: three-quarter view of the whole table. Film: square-on to the wall, like the movie camera.
-    const pos = this.wide.pos.clone().lerp(new THREE.Vector3(2, 38, 140), t);
-    const look = this.wide.look.clone().lerp(new THREE.Vector3(2, 23, 0), t);
-    const filmFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(22)) / Math.max(a, 1.1)));
-    this.camera.fov = THREE.MathUtils.lerp(30, filmFov, t);
+    const pos = this.wide.pos.clone().lerp(this.filmCam.pos, t);
+    const look = this.wide.look.clone().lerp(this.filmCam.look, t);
+    void a;
+    this.camera.fov = THREE.MathUtils.lerp(30, 34, t);
     this.camera.position.copy(pos);
     this.camera.lookAt(look);
     this.camera.updateProjectionMatrix();
@@ -646,7 +686,7 @@ export class Stage {
     this.cone.lookAt(this.spot.target.position);
     const len = this.spot.position.distanceTo(this.spot.target.position), rad = Math.tan(this.spot.angle) * len;
     this.cone.scale.set(rad, rad, len);
-    (this.cone.material as THREE.MeshBasicMaterial).opacity = 0.022 * this.lampOnLevel * flick * (1 - this.house * 0.6);
+    this.cone.visible = false;
     this.bloom.strength = 0.22 + 0.16 * (1 - this.house);
 
     // Duck: a rigid toy, so it rocks and bobs instead of bending.
@@ -711,5 +751,19 @@ export class Stage {
     }
 
     this.composer.render();
+
+    // If frames are slow, render fewer pixels.
+    if (!this.probe.pr) {
+      const next = this.quality.step(dt);
+      if (next !== null) {
+        this.renderer.setPixelRatio(next);
+        this.composer.setPixelRatio(next);
+        this.resize();
+        this.lowestRatio = Math.min(this.lowestRatio, next);
+      }
+    }
   }
+
+  /** Pixel ratio the game is currently rendering at. */
+  get pixelRatio() { return this.renderer.getPixelRatio(); }
 }

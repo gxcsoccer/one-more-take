@@ -20,7 +20,7 @@ const pct = (v: number) => Math.round(v * 100);
 /** Finer grid than the judge uses, so chalk lines come out smooth. */
 const FINE: Grid = { x0: S.wall.x0, y0: 0, cols: (S.wall.x1 - S.wall.x0) * 4, rows: S.wall.height * 4, cell: 0.25 };
 
-type Phase = 'intro' | 'block' | 'take' | 'quiz' | 'cameo' | 'wrap';
+type Phase = 'intro' | 'block' | 'take' | 'review' | 'quiz' | 'cameo' | 'wrap';
 
 const save = loadSave({ [S.id]: S.beats.length });
 const saved = () => save.scenes[S.id];
@@ -36,6 +36,7 @@ let outline: Uint8Array | null = null;
 let trace: Uint8Array | null = null;
 let take: { t: number; walk: boolean; judged: boolean; verdict: Verdict | null; roared: boolean; lit: boolean } | null = null;
 let cameoT = 0;
+let reviewT = 0;
 let drag: { what: 'lamp' | 'mark'; offset: number } | null = null;
 let burstT = 0;
 let afterMiss = false;
@@ -69,6 +70,7 @@ function renderStatic() {
 }
 function caption(): string {
   if (phase === 'cameo') return rich('cat.cameo');
+  if (phase === 'review') return rich('again');
   if (phase !== 'block') return '';
   if (afterMiss) return rich('again');
   if (beat().id === 'play') return rich(stage.clapperReady ? 'play.ready' : 'play.block');
@@ -96,6 +98,7 @@ function enterBeat(ix: number, resumed = false) {
   const b = beat();
   if (b.start && !resumed) Object.assign(setup, b.start);
   setup.lampZ = clamp(setup.lampZ, S.lamp.min, S.lamp.max);
+  moved.lamp = moved.mark = false;
   outline = maskOf(b.target, FINE);
   trace = null;
   lastSetup = null;
@@ -112,7 +115,6 @@ function backToBlocking() {
   const b = beat();
   phase = 'block';
   idle = 0;
-  moved.lamp = moved.mark = false;
   stage.film = false;
   document.body.classList.remove('film');
   stage.lampOn = b.rehearsalLight;
@@ -183,8 +185,16 @@ function runTake(dt: number) {
     take = null;
     if (!keeper) {
       afterMiss = !b.rehearsalLight;
-      if (!b.rehearsalLight) { trace = maskOf(setup, FINE); chalk(); }
-      return backToBlocking();
+      if (b.rehearsalLight) return backToBlocking();
+      // Lights-out miss: keep the camera on the wall, switch the lamp off and show where the shadow fell.
+      trace = maskOf(setup, FINE);
+      chalk();
+      phase = 'review';
+      reviewT = 0;
+      stage.lampOn = false;
+      stage.houseLights = 0.75;
+      $('burst').hidden = true;
+      return;
     }
     pressQuestion(afterQuestion);
   }
@@ -324,7 +334,7 @@ function wrap() {
   stage.film = false;
   stage.houseLights = 0.5;
   document.body.classList.remove('film');
-  const rows = S.beats.map((b, i) => `<tr><td>${t(`wrap.${b.id}`)}</td><td>${t('takes', { n: beatTakes[i] })}</td></tr>`).join('');
+  const rows = S.beats.map((b, i) => `<tr><td>${t(`wrap.${b.id}`)}</td><td>${t(beatTakes[i] === 1 ? 'take1' : 'takes', { n: beatTakes[i] })}</td></tr>`).join('');
   const el = card(`<h1>${t('wrap.h')}</h1><p>${rich('wrap.p')}</p><table>${rows}<tr><td colspan="2">${t('score', { r: quizScore.right, n: quizScore.asked })}</td></tr><tr><td colspan="2">${t('score.open', { m: quizScore.marks, n: quizScore.outOf })}</td></tr></table><button class="big" id="go">${t('replay')}</button>`);
   el.querySelector<HTMLElement>('#go')!.onclick = () => { $('modal').hidden = true; startOver(); };
 }
@@ -370,7 +380,9 @@ document.addEventListener('click', e => {
   pop.hidden = false;
   const r = el.getBoundingClientRect();
   pop.style.left = `${clamp(r.left - 30, 12, window.innerWidth - 380)}px`;
-  pop.style.top = r.top > window.innerHeight / 2 ? `${r.top - 130}px` : `${r.bottom + 10}px`;
+  // Above the word when there is room, so the box never covers the button under the text.
+  const ph = pop.offsetHeight || 120;
+  pop.style.top = r.top > ph + 20 ? `${r.top - ph - 10}px` : `${r.bottom + 10}px`;
   pop.querySelector<HTMLElement>('.say')!.onclick = () => {
     try { const u = new SpeechSynthesisUtterance(term.en); u.lang = 'en-GB'; speechSynthesis.speak(u); } catch { /* no speech here */ }
   };
@@ -394,6 +406,8 @@ function hintNow(): { from: Pt; to?: Pt; sway?: [Pt, Pt] } | null {
     return { from: lampAt(setup.lampZ), to: lampAt(setup.lampZ + (b.target.lampZ < setup.lampZ ? -26 : 26)) };
   }
   // Lights out: the set-up is the prediction. Never read the target here.
+  // After a miss the child already knows what can be dragged: stay out of the way for a while.
+  if (afterMiss && idle < 9) return null;
   if (!moved.lamp) return { from: lampAt(setup.lampZ), sway: [lampAt(setup.lampZ - 14), lampAt(setup.lampZ + 14)] };
   if (b.movable.includes('mark') && !moved.mark) return { from: markAt(setup.markX), sway: [markAt(setup.markX - 4), markAt(setup.markX + 4)] };
   return idle > 5 ? tap : null;
@@ -435,6 +449,9 @@ function frame(now: number) {
   else if (phase === 'cameo') {
     cameoT += dt;
     if (cameoT > 3.2) enterBeat(2);
+  } else if (phase === 'review') {
+    reviewT += dt;
+    if (reviewT > 3.2) backToBlocking();
   } else if (phase === 'block') {
     // Lit rehearsal: the duck stands on its mark. Dark blocking: it waits in the wings.
     const home = b.rehearsalLight ? setup.markX : S.duck.enterFrom;
@@ -482,6 +499,8 @@ Object.assign(window, {
     get hint() { const h = $('hint'); return h.hidden ? null : h.getBoundingClientRect().toJSON(); },
     /** Window size the camera was last fitted to, so a test can wait for a resize to be applied. */
     get fitted() { return stage.fitted; },
+    get pixelRatio() { return stage.pixelRatio; },
+    get lowestPixelRatio() { return stage.lowestRatio; },
     get handles() {
       return { lamp: stage.toClient(S.lamp.x, 5, setup.lampZ + 3), mark: stage.toClient(setup.markX, 3, S.duck.z + 8), clapper: stage.toClient(44, 8, 92) };
     },
