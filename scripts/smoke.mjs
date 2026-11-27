@@ -9,8 +9,13 @@ const out = 'qa-out';
 mkdirSync(out, { recursive: true });
 const server = await createServer({ server: { port: 5199, strictPort: false }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
-const page = await browser.newPage({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+// CI machines have no GPU: render in software, at 1x, and allow far more time,
+// because the game then runs in slow motion.
+const CI = !!process.env.CI, SLOW = CI ? 8 : 1;
+const gpu = process.platform === 'darwin' && !CI ? ['--use-angle=metal', '--enable-gpu'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: [...gpu, '--ignore-gpu-blocklist'] });
+const page = await browser.newPage({ viewport: CI ? { width: 1024, height: 768 } : { width: 1180, height: 820 }, deviceScaleFactor: CI ? 1 : 2, hasTouch: true });
+page.setDefaultTimeout(30000 * SLOW);
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => m.type() === 'error' && errors.push(m.text()));
@@ -19,7 +24,7 @@ const fail = msg => { throw new Error(msg); };
 const omt = expr => page.evaluate(`(() => { const o = window.__omt; return ${expr}; })()`);
 const shot = name => page.screenshot({ path: `${out}/${name}.png` });
 const wait = ms => page.waitForTimeout(ms);
-const phase = (p, timeout = 20000) => page.waitForFunction(want => window.__omt.phase === want, p, { timeout });
+const phase = (p, timeout = 20000) => page.waitForFunction(want => window.__omt.phase === want, p, { timeout: timeout * SLOW });
 
 async function drag(from, to, steps = 12) {
   await page.mouse.move(from.x, from.y);
@@ -41,7 +46,7 @@ async function take(name) {
   const c = await omt('o.handles.clapper');
   await page.mouse.click(c.x, c.y);
   await phase('take', 3000);
-  await page.waitForFunction(n => window.__omt.verdict && window.__omt.takeNo === n && document.getElementById('burst').hidden === false, await omt('o.takeNo'), { timeout: 15000 });
+  await page.waitForFunction(n => window.__omt.verdict && window.__omt.takeNo === n && document.getElementById('burst').hidden === false, await omt('o.takeNo'), { timeout: 15000 * SLOW });
   await wait(500);
   await shot(name);
   return omt('o.verdict');
@@ -60,7 +65,7 @@ async function pressQuestion(name, answerRight) {
 
 try {
   await page.goto(server.resolvedUrls.local[0]);
-  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(1200);
   await shot('01-intro');
   await page.click('#go');
@@ -80,7 +85,7 @@ try {
   await pressQuestion('05b-question-right', true);
 
   // Beat 2, lamp off while blocking.
-  await page.waitForFunction(() => window.__omt.beat === 'dark' && window.__omt.phase === 'block', null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__omt.beat === 'dark' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
   await wait(1200);
   await shot('06-dark-block');
   await setLamp(80);
@@ -98,7 +103,7 @@ try {
   await shot('10-cat-cameo');
 
   // Beat 3: two things to set, and a cat to keep in the light.
-  await page.waitForFunction(() => window.__omt.beat === 'cat' && window.__omt.phase === 'block', null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__omt.beat === 'cat' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
   await wait(1000);
   await shot('11-cat-block');
   const target = await omt('o.target');
@@ -108,7 +113,7 @@ try {
   if (!v.keeper) fail(`beat cat: expected a keeper, match ${v.match}, catDark ${v.catDark}`);
   await pressQuestion('12b-question', true);
   // Then the structured question: fill every blank, one of them wrongly, and hand in.
-  await page.waitForSelector('#hand', { timeout: 5000 });
+  await page.waitForSelector('#hand', { timeout: 5000 * SLOW });
   await shot('12c-interview');
   if (!(await page.isDisabled('#hand'))) fail('Hand in should be disabled until every blank is filled');
   const key = await omt('o.openKey');
