@@ -1,1 +1,7 @@
-{ "slots": {} }
+{
+  "slots": {
+    "facade": "facade.png",
+    "floor": "floor.png",
+    "sky": "sky.png"
+  }
+}
