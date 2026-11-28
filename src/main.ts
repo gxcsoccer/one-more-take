@@ -70,9 +70,10 @@ function renderStatic() {
 }
 function caption(): string {
   if (phase === 'cameo') return rich('cat.cameo');
-  if (phase === 'review') return rich('again');
+  const again = lastVerdict?.catDark ? 'cat.again' : 'again';
+  if (phase === 'review') return rich(again);
   if (phase !== 'block') return '';
-  if (afterMiss) return rich('again');
+  if (afterMiss) return rich(again);
   if (beat().id === 'play') return rich(stage.clapperReady ? 'play.ready' : 'play.block');
   return rich(`${beat().id}.block`);
 }
@@ -103,8 +104,9 @@ function enterBeat(ix: number, resumed = false) {
   trace = null;
   lastSetup = null;
   afterMiss = false;
-  chalk();
   stage.catVisible = b.cat;
+  stage.closeUp = false;
+  chalk();
   stage.movable = { lamp: b.movable.includes('lamp'), mark: b.movable.includes('mark') };
   Object.assign(checkpoint, { beat: ix, step: 'block', entered: true, touched: resumed && checkpoint.touched });
   persist();
@@ -204,7 +206,7 @@ function runTake(dt: number) {
 function afterQuestion() {
   const id = beat().id;
   if (id === 'play') return enterBeat(1);
-  if (id === 'dark') { phase = 'cameo'; cameoT = 0; stage.catVisible = true; sfx.paw(); return; }
+  if (id === 'dark') { phase = 'cameo'; cameoT = 0; stage.catVisible = true; stage.closeUp = true; chalk(); sfx.paw(); return; }
   interview(wrap);
 }
 
@@ -448,7 +450,7 @@ function frame(now: number) {
   if (phase === 'take') runTake(dt);
   else if (phase === 'cameo') {
     cameoT += dt;
-    if (cameoT > 3.2) enterBeat(2);
+    if (cameoT > 4.2) enterBeat(2);
   } else if (phase === 'review') {
     reviewT += dt;
     if (reviewT > 3.2) backToBlocking();

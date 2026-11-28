@@ -249,7 +249,17 @@ try {
   if (onRails(await omt('o.lampContact(1)'))) fail('the wheel-on-rail check still passes with the rails moved 1 cm out');
   if (lampModel.height < 6 || lampModel.height > 10 || lampModel.depth > 13 || lampModel.width > 10) fail(`spotlight size is off: ${JSON.stringify(lampModel)}`);
   console.log(`spotlight model: ${JSON.stringify(Object.fromEntries(Object.entries(lampModel).map(([k, v]) => [k, +v.toFixed(2)])))}`);
-  for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board', 'model:lamp']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
+  // The cat model: the keeper rule judges a head and a body (CAT in scene02.ts). Looking at the cat
+  // from the front, nearly every point the rule samples must land on the model, close to its surface,
+  // or the picture and the verdict part ways. It must also face the audience: found from its eyes.
+  const catModel = (await omt('o.models')).cat;
+  if (!catModel) fail('the cat model did not load');
+  if (catModel.eyeVerts < 8) fail(`the cat's eyes were not found in its texture (${catModel.eyeVerts} yellow points on the head), so its facing is a guess`);
+  if (catModel.covered < 0.92) fail(`only ${Math.round(catModel.covered * 100)}% of the judged cat lies on the cat model`);
+  if (catModel.surfaceGap > 0.35) fail(`the judged cat surface is ${catModel.surfaceGap.toFixed(2)} cm from the model's on average`);
+  if (catModel.height < 7 || catModel.height > 9.5 || catModel.width > 6 || catModel.depth > 5.4) fail(`cat size is off: ${JSON.stringify(catModel)}`);
+  console.log(`cat model: ${JSON.stringify(Object.fromEntries(Object.entries(catModel).map(([k, v]) => [k, +v.toFixed(2)])))}`);
+  for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board', 'model:lamp', 'model:cat']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
   const lame = await browser.newPage({ viewport: page.viewportSize() });
   await lame.route('**/assets/floor.png', r => r.fulfill({ status: 404, body: '' }));
   // A second 3D page next to the first is slow under software rendering: allow for it, and do not

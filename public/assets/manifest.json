@@ -18,6 +18,7 @@
     "clapper-board": "props/clapper-board.webp"
   },
   "models": {
-    "lamp": "models/lamp.glb"
+    "lamp": "models/lamp.glb",
+    "cat": "models/cat.glb"
   }
 }

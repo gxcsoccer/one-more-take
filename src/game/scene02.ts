@@ -60,9 +60,9 @@ export const maskOf = (s: Setup, g: Grid = GRID) => shadowMask(lampAt(s), DUCK, 
  * really is, not on the wall behind it. The stage builds the cat from these numbers.
  */
 export const CAT = {
-  seat: { x: scene02.cat.x, y: scene02.cat.y - 3.6, z: 1.9 },
-  body: { c: { x: 0, y: 2.6, z: 0 }, r: { x: 2.3, y: 2.7, z: 1.9 } },
-  head: { c: { x: -0.2, y: 5.9, z: 0.5 }, r: 1.9 },
+  seat: { x: scene02.cat.x, y: scene02.cat.y - 3.6, z: 2.8 },
+  body: { c: { x: 0, y: 1.9, z: -0.25 }, r: { x: 1.9, y: 2.2, z: 1.75 } },
+  head: { c: { x: 0, y: 5.9, z: 0 }, r: 1.8 },
 };
 
 /**
@@ -96,8 +96,13 @@ export function catShade(s: Setup): number {
   return n / CAT_POINTS.length;
 }
 
-/** Is the cat in the duck's shadow? A clipped ear or flank does not count: at least 40% of what can be seen of it must be dark. */
-export const catInShadow = (s: Setup): boolean => catShade(s) >= 0.4;
+/**
+ * Does the duck's shadow touch the cat? The rule is the one a child can check by looking: any
+ * shadow that can be seen on the cat spoils the take. Under 5% of the cat is a sliver too thin
+ * to see on screen, and is let through.
+ */
+export const CAT_TOUCH = 0.05;
+export const catInShadow = (s: Setup): boolean => catShade(s) >= CAT_TOUCH;
 
 export interface Verdict { match: number; catDark: boolean; keeper: boolean }
 

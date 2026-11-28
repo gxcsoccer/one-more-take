@@ -13,7 +13,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DUCK, type Grid } from '../sim/light';
-import { CAT, type Scene02 } from './scene02';
+import { CAT, catPoints, type Scene02 } from './scene02';
 import { AdaptiveResolution } from './quality';
 
 const ease = (cur: number, to: number, dt: number, rate: number) => cur + (to - cur) * Math.min(1, dt * rate);
@@ -55,6 +55,9 @@ export class Stage {
   lampOn = false;
   houseLights = 1;
   film = false;
+  /** Push in on the cat, for its entrance. */
+  closeUp = false;
+  private closeT = 0;
   catVisible = false;
   catSulking = false;
   movable = { lamp: false, mark: false };
@@ -75,8 +78,10 @@ export class Stage {
   private mark = new THREE.Group();
   private cat = new THREE.Group();
   private catEyes: THREE.Mesh[] = [];
-  private catTail!: THREE.Group;
+  private catTail: THREE.Group | null = null;
+  private catGlow: THREE.MeshStandardMaterial[] = [];
   private catPop = 0;
+  private catShrink = 0;
   private catHop = 0;
   private clapper = new THREE.Group();
   private clapArm!: THREE.Mesh;
@@ -97,7 +102,7 @@ export class Stage {
   private lampModel: THREE.Object3D | null = null;
   private sleepers: THREE.Mesh[] = [];
   /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
-  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number; wheelGauge?: number; wheelBottom?: number; railTop?: number; railX?: number }> = {};
+  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; covered?: number; surfaceGap?: number; turned?: number; eyeVerts?: number; triangles: number; wheelGauge?: number; wheelBottom?: number; railTop?: number; railX?: number }> = {};
   private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
@@ -461,19 +466,19 @@ export class Stage {
     const L = this.L;
     // The cat sits on a small ledge in the strip of wall between two window columns, so it never
     // hides a window and no window has to be left out for it.
-    const ledge = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.6, 2.6), new THREE.MeshStandardMaterial({ color: 0xf1e3c8, roughness: 0.9 }));
-    ledge.position.set(L.cat.x, L.cat.y - 3.9, 1.3);
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.6, 5.4), new THREE.MeshStandardMaterial({ color: 0xf1e3c8, roughness: 0.9 }));
+    ledge.position.set(L.cat.x, L.cat.y - 3.9, 2.7);
     ledge.receiveShadow = true;
     this.scene.add(ledge);
     const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), fur); body.scale.set(CAT.body.r.x, CAT.body.r.y, CAT.body.r.z); body.position.set(CAT.body.c.x, CAT.body.c.y, CAT.body.c.z);
     const head = new THREE.Mesh(new THREE.SphereGeometry(CAT.head.r, 24, 18), fur); head.position.set(CAT.head.c.x, CAT.head.c.y, CAT.head.c.z);
     this.cat.add(body, head);
-    for (const x of [-1.3, 0.9]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 12), fur); ear.position.set(x, 7.9, 0.4); this.cat.add(ear); }
+    for (const x of [-1.1, 1.1]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 12), fur); ear.position.set(x, 7.6, 0); this.cat.add(ear); }
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x3a2f10, emissive: 0xffd95e, emissiveIntensity: 1.6 });
-    for (const x of [-0.95, 0.55]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 10), eyeMat); e.position.set(x, 6.1, 2.25); this.cat.add(e); this.catEyes.push(e); }
+    for (const x of [-0.75, 0.75]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 10), eyeMat); e.position.set(x, 6.1, 1.6); this.cat.add(e); this.catEyes.push(e); }
     this.catTail = new THREE.Group();
     for (let i = 0; i < 7; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.55 - i * 0.03, 10, 8), fur); s.position.set(i * 0.45, i * 0.78, 0); this.catTail.add(s); }
-    this.catTail.position.set(2.1, 0.9, 0.2);
+    this.catTail.position.set(1.8, 0.9, -0.6);
     this.cat.add(this.catTail);
     this.cat.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).receiveShadow = true; });
     this.cat.position.set(CAT.seat.x, CAT.seat.y, CAT.seat.z);
@@ -576,7 +581,7 @@ export class Stage {
         /* keep the placeholder */
       }
     });
-    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {}), this.loadModels(base, manifest.models ?? {}).catch(() => {})]);
+    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {}), this.loadLamp(base, manifest.models ?? {}).catch(() => {}), this.loadCat(base, manifest.models ?? {}).catch(() => {})]);
     this.artReady = true;
   }
 
@@ -609,8 +614,8 @@ export class Stage {
     });
   }
 
-  /** Generated 3D models. Each is optional; a missing or broken one keeps its placeholder. */
-  private async loadModels(base: string, models: Record<string, string>) {
+  /** The generated spotlight. Optional: a missing or broken model keeps the placeholder. */
+  private async loadLamp(base: string, models: Record<string, string>) {
     if (!models.lamp) return;
     const gltf = await new GLTFLoader().loadAsync(`${base}assets/${models.lamp}`);
     const model = gltf.scene;
@@ -677,6 +682,97 @@ export class Stage {
     for (const sl of this.sleepers) { sl.scale.y = 0.66; sl.position.y = 0.1; sl.scale.x = (gauge * 2 + 2.4) / 8.4; }
     this.models.lamp = { height: RAIL_TOP + size.y * k, width: size[other] * k, depth: len * k, lensHeight: RAIL_TOP + (lensY - box.min.y) * k, triangles, wheelGauge: gauge, wheelBottom: RAIL_TOP, railTop: this.rails[0].position.y + 0.15, railX: Math.abs(this.rails[0].position.x - this.L.lamp.x) };
     this.artLoaded.push('model:lamp');
+  }
+
+  /**
+   * The generated cat. Optional: a missing or broken model keeps the placeholder.
+   * The model is stood on the ledge, turned so its eyes face the audience, and scaled so its head
+   * is the size of the head the keeper rule judges (CAT in scene02.ts).
+   */
+  private async loadCat(base: string, models: Record<string, string>) {
+    if (!models.cat) return;
+    const gltf = await new GLTFLoader().loadAsync(`${base}assets/${models.cat}`);
+    const model = gltf.scene;
+    model.updateMatrixWorld(true);
+    const pts: THREE.Vector3[] = [], yellow: THREE.Vector3[] = [];
+    let triangles = 0;
+    model.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.castShadow = false;
+      m.receiveShadow = true;
+      const mat = m.material as THREE.MeshStandardMaterial;
+      const pos = m.geometry.getAttribute('position'), uv = m.geometry.getAttribute('uv');
+      triangles += (m.geometry.index ? m.geometry.index.count : pos.count) / 3;
+      // Read the colour texture, to find the eyes: the only bright yellow on the head.
+      let px: ImageData | null = null;
+      const img = mat.map?.image as (CanvasImageSource & { width: number; height: number }) | undefined;
+      if (img && uv) {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        if (g) { g.drawImage(img, 0, 0); px = g.getImageData(0, 0, c.width, c.height); }
+      }
+      const isEye = (d: Uint8ClampedArray, at: number) => d[at] > 200 && d[at + 1] > 150 && d[at + 2] < 70;
+      for (let i = 0; i < pos.count; i++) {
+        const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+        pts.push(p);
+        if (!px) continue;
+        const x = Math.min(px.width - 1, Math.max(0, Math.floor(uv.getX(i) * px.width))), y = Math.min(px.height - 1, Math.max(0, Math.floor(uv.getY(i) * px.height)));
+        if (isEye(px.data, (y * px.width + x) * 4)) yellow.push(p);
+      }
+      // A black cat in a black shadow cannot be seen. Its eyes shine by themselves, and the rest of
+      // it keeps a faint glow of its own colours, so it can still be found and read in the dark.
+      if (px && mat.map) {
+        const d = px.data;
+        for (let at = 0; at < d.length; at += 4) if (!isEye(d, at)) { d[at] *= 0.3; d[at + 1] *= 0.3; d[at + 2] *= 0.3; }
+        const c = document.createElement('canvas');
+        c.width = px.width; c.height = px.height;
+        c.getContext('2d')!.putImageData(px, 0, 0);
+        const glow = new THREE.CanvasTexture(c);
+        glow.flipY = false;
+        glow.colorSpace = THREE.SRGBColorSpace;
+        mat.emissiveMap = glow; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 1;
+        this.catGlow.push(mat);
+      }
+    });
+    const box = new THREE.Box3().setFromPoints(pts), size = box.getSize(new THREE.Vector3());
+    // The head is the ball between about 62% and 82% of the height; its middle is the cat's axis.
+    const inHead = (p: THREE.Vector3) => p.y > box.min.y + size.y * 0.62 && p.y < box.min.y + size.y * 0.82;
+    const headBox = new THREE.Box3().setFromPoints(pts.filter(inHead)), axis = headBox.getCenter(new THREE.Vector3());
+    const headRadius = (headBox.max.x - headBox.min.x + headBox.max.z - headBox.min.z) / 4;
+    const k = CAT.head.r / headRadius;
+    if (!triangles || !(k > 0) || !Number.isFinite(k)) throw new Error('cat model has no usable geometry');
+    // Which way it faces: from the head's axis towards its eyes. Without eyes to go by, glTF's own front (+z).
+    const eyes = yellow.filter(inHead);
+    let turn = 0;
+    if (eyes.length >= 8) {
+      const d = eyes.reduce((a, p) => a.add(new THREE.Vector3(p.x - axis.x, 0, p.z - axis.z)), new THREE.Vector3());
+      turn = Math.atan2(-d.x, d.z);
+    }
+    model.position.set(-axis.x, -box.min.y, -axis.z);
+    const holder = new THREE.Group();
+    holder.add(model);
+    holder.rotation.y = turn;
+    holder.scale.setScalar(k);
+    holder.updateMatrixWorld(true);
+    // How well the judged shape sits on the model: look straight at the cat from the front, at each
+    // point the keeper rule samples. `covered` is the share of them that land on the model at all;
+    // `surfaceGap` is how far, on average, the model's surface is from the judged one there.
+    const ray = new THREE.Raycaster(), samples = catPoints();
+    let on = 0, gap = 0;
+    for (const p of samples) {
+      ray.set(new THREE.Vector3(p.x - CAT.seat.x, p.y - CAT.seat.y, 40), new THREE.Vector3(0, 0, -1));
+      const hit = ray.intersectObject(holder, true)[0];
+      if (hit) { on++; gap += Math.abs(hit.point.z - (p.z - CAT.seat.z)); }
+    }
+    const placed = new THREE.Box3().setFromObject(holder), placedSize = placed.getSize(new THREE.Vector3());
+    for (const old of [...this.cat.children]) this.cat.remove(old);
+    this.catEyes = [];
+    this.catTail = null;
+    this.cat.add(holder);
+    this.models.cat = { height: placedSize.y, width: placedSize.x, depth: placedSize.z, triangles, covered: on / samples.length, surfaceGap: on ? gap / on : Infinity, turned: (turn * 180) / Math.PI, eyeVerts: eyes.length };
+    this.artLoaded.push('model:cat');
   }
 
   /**
@@ -778,6 +874,19 @@ export class Stage {
       stripes(ck, 7, 5);
       k.drawImage(c, 0, 0);
     }
+    if (this.catVisible) {
+      // The director's note around the cat: a little chalk sun. Keep this one in the light.
+      const cx = (CAT.seat.x - this.L.wall.x0) * 10, cy = H - (CAT.seat.y + 4.1) * 10, r = 66;
+      k.save();
+      k.strokeStyle = '#ffd76b'; k.lineWidth = 7; k.lineCap = 'round';
+      k.setLineDash([22, 13]);
+      k.beginPath(); k.arc(cx, cy, r, 0, Math.PI * 2); k.stroke();
+      k.setLineDash([]);
+      k.beginPath();
+      for (let a = 0; a < 12; a++) { const q = (a / 12) * Math.PI * 2 + 0.26; k.moveTo(cx + Math.cos(q) * (r + 12), cy + Math.sin(q) * (r + 12)); k.lineTo(cx + Math.cos(q) * (r + 26), cy + Math.sin(q) * (r + 26)); }
+      k.stroke();
+      k.restore();
+    }
     if (outline) {
       const src = stamp(outline), [c, ck] = layer();
       for (let a = 0; a < 16; a++) ck.drawImage(src, Math.cos((a / 16) * Math.PI * 2) * 7, Math.sin((a / 16) * Math.PI * 2) * 7, W, H);
@@ -874,6 +983,9 @@ export class Stage {
     const pos = this.wide.pos.clone().lerp(this.filmCam.pos, t);
     const look = this.wide.look.clone().lerp(this.filmCam.look, t);
     void a;
+    // The cat's entrance: come right up to it, so there is no doubt who the caption is about.
+    const c = smooth(this.closeT);
+    if (c > 0) { pos.lerp(new THREE.Vector3(CAT.seat.x + 5, CAT.seat.y + 7, 52), c); look.lerp(new THREE.Vector3(CAT.seat.x, CAT.seat.y + 4.2, CAT.seat.z), c); }
     this.camera.fov = THREE.MathUtils.lerp(30, 34, t);
     this.camera.position.copy(pos);
     this.camera.lookAt(look);
@@ -885,6 +997,7 @@ export class Stage {
   update(dt: number) {
     const L = this.L, t = (this.clock += dt);
     this.filmT = ease(this.filmT, this.film ? 1 : 0, dt, 3.2);
+    this.closeT = ease(this.closeT, this.closeUp ? 1 : 0, dt, 3.2);
     this.placeCamera();
 
     // Lights. The lamp flickers for a moment when it is switched on.
@@ -955,8 +1068,13 @@ export class Stage {
     // Cat.
     this.catPop = ease(this.catPop, this.catVisible ? 1 : 0, dt, 7);
     this.cat.scale.setScalar(Math.max(0.001, this.catPop));
-    this.cat.rotation.y = ease(this.cat.rotation.y, this.catSulking ? Math.PI * 0.86 : 0, dt, 6);
-    this.catTail.rotation.z = Math.sin(t * (this.catSulking ? 13 : 2.6)) * (this.catSulking ? 0.35 : 0.2) - 0.2;
+    // In the dark the cat stays facing us, hunched and shivering, eyes shining. Turned away it
+    // would be a black shape on a black shadow, and nobody could tell why the take was cut.
+    this.catShrink = ease(this.catShrink, this.catSulking ? 1 : 0, dt, 8);
+    this.cat.scale.y *= 1 - 0.14 * this.catShrink;
+    this.cat.rotation.z = Math.sin(t * 38) * 0.05 * this.catShrink;
+    for (const m of this.catGlow) m.emissiveIntensity = 1 + 1.6 * this.catShrink;
+    if (this.catTail) this.catTail.rotation.z = Math.sin(t * (this.catSulking ? 13 : 2.6)) * (this.catSulking ? 0.35 : 0.2) - 0.2;
     for (const e of this.catEyes) e.scale.y = ease(e.scale.y, this.catSulking ? 0.25 : 1, dt, 10);
     this.catHop = Math.max(0, this.catHop - dt * 1.3);
     this.cat.position.y = CAT.seat.y + Math.abs(Math.sin(this.catHop * Math.PI * 3)) * this.catHop * 2.4;
