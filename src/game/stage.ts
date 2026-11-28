@@ -12,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { DUCK, type Grid } from '../sim/light';
-import type { Scene02 } from './scene02';
+import { CAT, type Scene02 } from './scene02';
 import { AdaptiveResolution } from './quality';
 
 const ease = (cur: number, to: number, dt: number, rate: number) => cur + (to - cur) * Math.min(1, dt * rate);
@@ -209,6 +209,10 @@ export class Stage {
     sky.repeat.set(3, 1);
     sky.offset.set(-1, 0);
     this.scene.add(back);
+    // The backdrop carries on below the painting, down past the table's back edge.
+    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(1560, 60), new THREE.MeshBasicMaterial({ color: 0x1b4f43, toneMapped: false }));
+    skirt.position.set(0, -64, -70);
+    this.scene.add(skirt);
     // Neighbouring blocks: plain cardboard boxes with a painted band, lower than the star building.
     const card = new THREE.MeshStandardMaterial({ color: 0xcdb692, roughness: 1 }), roofMat = new THREE.MeshStandardMaterial({ color: 0x8a7663, roughness: 1 });
     const bands = [0x7fb5a6, 0xe8b85a, 0xd98a5f, 0x7fb5a6].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
@@ -397,11 +401,12 @@ export class Stage {
       foot: new THREE.MeshPhysicalMaterial({ color: 0xf07a3c, roughness: 0.34, clearcoat: 0.6 }),
       key: new THREE.MeshStandardMaterial({ color: 0xb8973f, roughness: 0.42, metalness: 0.75 }),
     };
-    const ball = new THREE.SphereGeometry(1, 48, 32);
+    // The judge uses the exact ellipsoids; the meshes only have to look round at toy size.
+    const big = new THREE.SphereGeometry(1, 32, 20), small = new THREE.SphereGeometry(1, 16, 10);
     // The key turns about its own stem.
     const keyAxis = DUCK.find(p => p.part === 'key')!.c.x;
     for (const p of DUCK) {
-      const m = new THREE.Mesh(ball, mats[p.part]);
+      const m = new THREE.Mesh(Math.max(p.r.x, p.r.y, p.r.z) > 3 ? big : small, mats[p.part]);
       m.castShadow = true;
       m.scale.set(p.r.x, p.r.y, p.r.z);
       if (p.part === 'key') { m.position.set(p.c.x - keyAxis, p.c.y, p.c.z); this.key.add(m); }
@@ -438,8 +443,8 @@ export class Stage {
     ledge.position.set(L.cat.x, L.cat.y - 3.9, 1.3);
     ledge.receiveShadow = true;
     this.scene.add(ledge);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), fur); body.scale.set(2.3, 2.7, 1.9); body.position.y = 2.6;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(1.9, 24, 18), fur); head.position.set(-0.2, 5.9, 0.5);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), fur); body.scale.set(CAT.body.r.x, CAT.body.r.y, CAT.body.r.z); body.position.set(CAT.body.c.x, CAT.body.c.y, CAT.body.c.z);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(CAT.head.r, 24, 18), fur); head.position.set(CAT.head.c.x, CAT.head.c.y, CAT.head.c.z);
     this.cat.add(body, head);
     for (const x of [-1.3, 0.9]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 12), fur); ear.position.set(x, 7.9, 0.4); this.cat.add(ear); }
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x3a2f10, emissive: 0xffd95e, emissiveIntensity: 1.6 });
@@ -449,7 +454,7 @@ export class Stage {
     this.catTail.position.set(2.1, 0.9, 0.2);
     this.cat.add(this.catTail);
     this.cat.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).receiveShadow = true; });
-    this.cat.position.set(L.cat.x, L.cat.y - 3.6, 1.9);
+    this.cat.position.set(CAT.seat.x, CAT.seat.y, CAT.seat.z);
     this.cat.scale.setScalar(0.001);
     this.scene.add(this.cat);
   }
@@ -762,7 +767,7 @@ export class Stage {
     this.catTail.rotation.z = Math.sin(t * (this.catSulking ? 13 : 2.6)) * (this.catSulking ? 0.35 : 0.2) - 0.2;
     for (const e of this.catEyes) e.scale.y = ease(e.scale.y, this.catSulking ? 0.25 : 1, dt, 10);
     this.catHop = Math.max(0, this.catHop - dt * 1.3);
-    this.cat.position.y = L.cat.y - 3.6 + Math.abs(Math.sin(this.catHop * Math.PI * 3)) * this.catHop * 2.4;
+    this.cat.position.y = CAT.seat.y + Math.abs(Math.sin(this.catHop * Math.PI * 3)) * this.catHop * 2.4;
 
     // Confetti.
     this.confetti.points.visible = this.confetti.life > 0;

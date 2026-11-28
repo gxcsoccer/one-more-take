@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DUCK, inShadow, maskArea, maskTop, overlap, segmentHits, shadowMask, type Ellipsoid } from './light';
-import { catInShadow, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
+import { catInShadow, catPoints, catShade, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
 
 const ball: Ellipsoid[] = [{ c: { x: 0, y: 10, z: 0 }, r: { x: 5, y: 5, z: 5 } }];
 const at = (z: number) => ({ x: 0, y: 10, z });
@@ -84,6 +84,24 @@ describe('scene 02 is playable', () => {
 
   it('cat beat: the previous answer leaves the cat in the dark', () => {
     for (const z of lamps) if (judge(dark, { lampZ: z, markX: dark.target.markX }).keeper) expect(catInShadow({ lampZ: z, markX: dark.target.markX })).toBe(true);
+  });
+
+  it('the cat is judged on its body and head, where it really sits', () => {
+    expect(catPoints()).toHaveLength(10);
+    for (const p of catPoints()) expect(p.z).toBeGreaterThan(1.5);
+    // Found in review: a shadow that only clips the cat must not be reported as "the cat is in
+    // the dark". Such set-ups exist, and none of them may be called dark.
+    let clipped = 0;
+    for (const z of lamps) for (const x of marks) {
+      const shade = catShade({ lampZ: z, markX: x });
+      if (shade > 0 && shade < 0.4) { clipped++; expect(judge(cat, { lampZ: z, markX: x }).catDark).toBe(false); }
+    }
+    expect(clipped).toBeGreaterThan(20);
+    // The two set-ups the story depends on, at their extremes: fully dark, then fully lit.
+    expect(catShade(dark.target)).toBe(1);
+    expect(catShade(cat.target)).toBe(0);
+    // And every way of passing the lights-out beat leaves the cat wholly in shadow.
+    for (const z of lamps) if (judge(dark, { lampZ: z, markX: dark.target.markX }).keeper) expect(catShade({ lampZ: z, markX: dark.target.markX })).toBe(1);
   });
 
   it('cat beat: solvable with finger room, and not by guessing', () => {

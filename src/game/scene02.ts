@@ -6,7 +6,7 @@
  * floor mark), calls ACTION, and the take either fills the outline or not.
  * From beat 2 on the lamp is off while blocking, so the set-up is a prediction.
  */
-import { DUCK, inShadow, overlap, shadowMask, type Grid, type Pose, type Vec3 } from '../sim/light';
+import { DUCK, hidden, overlap, shadowMask, type Grid, type Pose, type Vec3 } from '../sim/light';
 
 export interface Setup { lampZ: number; markX: number }
 
@@ -35,7 +35,7 @@ export const scene02 = {
   lamp: { x: 0, y: 4, min: 58, max: 124 },
   duck: { z: 40, min: -14, max: 14, enterFrom: -52 },
   /** Centre of the cat. x is midway between two window columns. */
-  cat: { x: 30, y: 25.5 },
+  cat: { x: 18, y: 28.6 },
   /** How much of the outline a take must match to be a keeper. */
   keeper: 0.72,
   beats: [
@@ -54,12 +54,35 @@ export const lampAt = (s: Setup): Vec3 => ({ x: scene02.lamp.x, y: scene02.lamp.
 export const duckAt = (x: number): Pose => ({ x, z: scene02.duck.z, yaw: 0 });
 export const maskOf = (s: Setup, g: Grid = GRID) => shadowMask(lampAt(s), DUCK, duckAt(s.markX), g);
 
-/** Is the cat sitting in the duck's shadow? */
-export function catInShadow(s: Setup): boolean {
-  const { x, y } = scene02.cat;
-  for (const [dx, dy] of [[0, 0], [-2, 2], [2, 2], [-2, -2], [2, -2]]) if (inShadow(lampAt(s), x + dx, y + dy, DUCK, duckAt(s.markX))) return true;
-  return false;
+/**
+ * The cat as the stage draws it at rest, facing front: where it sits on its ledge, and its
+ * body and head relative to that. It stands out from the wall, so it is judged where it
+ * really is, not on the wall behind it. The stage builds the cat from these numbers.
+ */
+export const CAT = {
+  seat: { x: scene02.cat.x, y: scene02.cat.y - 3.6, z: 1.9 },
+  body: { c: { x: 0, y: 2.6, z: 0 }, r: { x: 2.3, y: 2.7, z: 1.9 } },
+  head: { c: { x: -0.2, y: 5.9, z: 0.5 }, r: 1.9 },
+};
+
+/** Ten points spread over the cat's body and head. The tail and the animation are left out on purpose. */
+export function catPoints(): Vec3[] {
+  const { seat, body, head } = CAT, out: Vec3[] = [];
+  for (const [dx, dy] of [[0, 0], [0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]]) {
+    out.push({ x: seat.x + body.c.x + dx * body.r.x, y: seat.y + body.c.y + dy * body.r.y, z: seat.z + body.c.z });
+    out.push({ x: seat.x + head.c.x + dx * head.r, y: seat.y + head.c.y + dy * head.r, z: seat.z + head.c.z });
+  }
+  return out;
 }
+
+/** Share of the cat's body and head that the duck hides from the lamp. */
+export function catShade(s: Setup): number {
+  const lamp = lampAt(s), pose = duckAt(s.markX), pts = catPoints();
+  return pts.filter(p => hidden(lamp, p, DUCK, pose)).length / pts.length;
+}
+
+/** Is the cat sitting in the duck's shadow? A clipped ear or tail does not count: at least 40% of it must be dark. */
+export const catInShadow = (s: Setup): boolean => catShade(s) >= 0.4;
 
 export interface Verdict { match: number; catDark: boolean; keeper: boolean }
 
