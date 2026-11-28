@@ -28,6 +28,11 @@ function canvasTexture(w: number, h: number, paint: (k: CanvasRenderingContext2D
   return t;
 }
 
+/** The table top: width along x, depth along z starting at z0 (behind the building). Top surface is y = 0. */
+const TABLE = { w: 330, d: 200, z0: -48 };
+/** How far below the table top the room's floor lies. */
+const ROOM_FLOOR = 82;
+
 export type Pickable = 'lamp' | 'mark' | 'clapper';
 
 export class Stage {
@@ -159,12 +164,27 @@ export class Stage {
       }
     });
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(5, 5);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), (this.skins.floor = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.78, metalness: 0 })));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, 0, 150);
-    floor.receiveShadow = true;
-    this.scene.add(floor);
+    tex.repeat.set(TABLE.w / 180, TABLE.d / 180);
+    // The set stands on a wooden table, as in the concept art: a top with an edge, an apron,
+    // four legs, and the room's floor far below.
+    const top = (this.skins.floor = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.78, metalness: 0 }));
+    const side = new THREE.MeshStandardMaterial({ color: 0x6a3f24, roughness: 0.7 });
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(TABLE.w, 5, TABLE.d), [side, side, top, side, side, side]);
+    slab.position.set(0, -2.5, TABLE.z0 + TABLE.d / 2);
+    slab.receiveShadow = true;
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(TABLE.w - 14, 9, TABLE.d - 14), new THREE.MeshStandardMaterial({ color: 0x55321c, roughness: 0.8 }));
+    apron.position.set(0, -9.5, TABLE.z0 + TABLE.d / 2);
+    this.scene.add(slab, apron);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x4a2b18, roughness: 0.8 });
+    for (const x of [-1, 1]) for (const z of [0, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(10, ROOM_FLOOR - 14, 10), legMat);
+      leg.position.set(x * (TABLE.w / 2 - 14), -14 - (ROOM_FLOOR - 14) / 2, z ? TABLE.z0 + TABLE.d - 14 : TABLE.z0 + 14);
+      this.scene.add(leg);
+    }
+    const room = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshStandardMaterial({ color: 0x23160f, roughness: 0.95 }));
+    room.rotation.x = -Math.PI / 2;
+    room.position.set(0, -ROOM_FLOOR, 200);
+    this.scene.add(room);
   }
 
   private buildBackdrop() {
@@ -182,27 +202,35 @@ export class Stage {
       }
     });
     const back = new THREE.Mesh(new THREE.PlaneGeometry(1560, 260), (this.skins.sky = new THREE.MeshBasicMaterial({ map: sky, toneMapped: false, color: 0x9aa7a8 })));
-    back.position.set(0, 110, -70);
+    back.position.set(0, 96, -70);
     // Three paintings wide. The middle one is the painting exactly as painted and where it always
     // was; the two outer ones are its mirror images, so the joins are seamless.
     sky.wrapS = THREE.MirroredRepeatWrapping;
     sky.repeat.set(3, 1);
     sky.offset.set(-1, 0);
     this.scene.add(back);
-    // Neighbouring cardboard blocks give the street some depth.
-    const mat = new THREE.MeshStandardMaterial({ color: 0x5f8a80, roughness: 1 });
-    for (const [x, w, h, z] of [[-80, 44, 36, -16], [-124, 40, 50, -30], [80, 46, 30, -14], [126, 40, 46, -32]] as const) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 14), mat);
+    // Neighbouring blocks: plain cardboard boxes with a painted band, lower than the star building.
+    const card = new THREE.MeshStandardMaterial({ color: 0xcdb692, roughness: 1 }), roofMat = new THREE.MeshStandardMaterial({ color: 0x8a7663, roughness: 1 });
+    const bands = [0x7fb5a6, 0xe8b85a, 0xd98a5f, 0x7fb5a6].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
+    const lit = new THREE.MeshStandardMaterial({ color: 0x2a2018, emissive: 0xffd98a, emissiveIntensity: 0.8 }), unlit = new THREE.MeshStandardMaterial({ color: 0x3f5a60, roughness: 0.4 });
+    ([[-82, 46, 34, -18], [-126, 40, 44, -30], [82, 46, 28, -16], [128, 42, 40, -30]] as const).forEach(([x, w, h, z], n) => {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 16), card);
       b.position.set(x, h / 2, z);
       b.receiveShadow = true;
-      this.scene.add(b);
-      const lit = new THREE.MeshBasicMaterial({ color: 0xf2c97a, toneMapped: false });
-      for (let i = 0; i < 4; i++) for (let j = 0; j < Math.floor(h / 12); j++) if ((i + j * 3 + Math.round(x)) % 3 === 0) {
-        const win = new THREE.Mesh(new THREE.PlaneGeometry(4, 5), lit);
-        win.position.set(x - w / 2 + 7 + i * 9, 7 + j * 12, z + 7.05);
-        this.scene.add(win);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 2, 1.4, 18), roofMat);
+      roof.position.set(x, h + 0.7, z);
+      this.scene.add(b, roof);
+      for (let j = 0; j < Math.floor(h / 11); j++) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(w, 1.3, 0.2), bands[(n + j) % bands.length]);
+        band.position.set(x, 1.4 + j * 11, z + 8.05);
+        this.scene.add(band);
+        for (let i = 0; i < 4; i++) {
+          const win = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 5.4), (i + j * 3 + n) % 3 === 0 ? lit : unlit);
+          win.position.set(x - w / 2 + 7 + i * ((w - 14) / 3), 6.4 + j * 11, z + 8.06);
+          this.scene.add(win);
+        }
       }
-    }
+    });
   }
 
   private buildBuilding() {
@@ -240,7 +268,6 @@ export class Stage {
     L.windows.cols.forEach((cx, ci) => {
       for (let s = 0; s < W.storeys; s++) {
         const cy = L.windows.y0 + s * W.storeyH;
-        if (Math.abs(cx - L.cat.x) < 9 && Math.abs(cy - L.cat.y) < 8) continue;
         const lit = home.has(`${ci}:${s}`) || (ci * 7 + s * 5) % 3 !== 0;
         const f = new THREE.Mesh(new THREE.BoxGeometry(L.windows.w + 1, L.windows.h + 1, 0.5), frame);
         f.position.set(cx, cy, 0.2);
@@ -363,35 +390,39 @@ export class Stage {
   }
 
   private buildDuck() {
+    // Painted tin, as on the concept sheet: glossy yellow enamel, orange bill and feet, brass key.
     const mats = {
-      body: new THREE.MeshPhysicalMaterial({ color: 0xf2b632, roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.25 }),
-      bill: new THREE.MeshPhysicalMaterial({ color: 0xee6f35, roughness: 0.35, clearcoat: 0.6 }),
-      foot: new THREE.MeshPhysicalMaterial({ color: 0xee6f35, roughness: 0.35, clearcoat: 0.6 }),
-      key: new THREE.MeshStandardMaterial({ color: 0xc9ccc0, roughness: 0.45, metalness: 0.7 }),
+      body: new THREE.MeshPhysicalMaterial({ color: 0xf4bc22, roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.22 }),
+      bill: new THREE.MeshPhysicalMaterial({ color: 0xf07a3c, roughness: 0.34, clearcoat: 0.6 }),
+      foot: new THREE.MeshPhysicalMaterial({ color: 0xf07a3c, roughness: 0.34, clearcoat: 0.6 }),
+      key: new THREE.MeshStandardMaterial({ color: 0xb8973f, roughness: 0.42, metalness: 0.75 }),
     };
-    const ball = new THREE.SphereGeometry(1, 40, 28);
+    const ball = new THREE.SphereGeometry(1, 48, 32);
+    // The key turns about its own stem.
+    const keyAxis = DUCK.find(p => p.part === 'key')!.c.x;
     for (const p of DUCK) {
       const m = new THREE.Mesh(ball, mats[p.part]);
       m.castShadow = true;
-      if (p.part === 'key') {
-        // Key parts are placed relative to the key's own spin axis.
-        m.position.set(p.c.x + 3.4, p.c.y, p.c.z);
-        m.scale.set(p.r.x, p.r.y, p.r.z);
-        this.key.add(m);
-      } else {
-        m.position.set(p.c.x, p.c.y, p.c.z);
-        m.scale.set(p.r.x, p.r.y, p.r.z);
-        this.duckBody.add(m);
-      }
+      m.scale.set(p.r.x, p.r.y, p.r.z);
+      if (p.part === 'key') { m.position.set(p.c.x - keyAxis, p.c.y, p.c.z); this.key.add(m); }
+      else { m.position.set(p.c.x, p.c.y, p.c.z); this.duckBody.add(m); }
     }
-    this.key.position.x = -3.4;
-    const eye = new THREE.MeshPhysicalMaterial({ color: 0x1b2322, roughness: 0.1, clearcoat: 1 });
-    for (const z of [-2.75, 2.75]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.72, 16, 12), eye);
-      e.position.set(5.5, 12.8, z);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      glint.position.set(5.9, 13.1, z * 1.16);
-      this.duckBody.add(e, glint);
+    this.key.position.x = keyAxis;
+    // Details that sit inside the silhouette and cast no shadow of their own: the seam where
+    // head meets body, the raised wing rims, the eyes.
+    const head = DUCK[1], seam = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.24, 10, 40), new THREE.MeshStandardMaterial({ color: 0xc99414, roughness: 0.5, metalness: 0.3 }));
+    seam.rotation.x = Math.PI / 2;
+    seam.position.set(head.c.x - 0.5, 8.75, 0);
+    this.duckBody.add(seam);
+    for (const z of [-1, 1]) {
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.07, 8, 40), new THREE.MeshStandardMaterial({ color: 0xc99414, roughness: 0.5, metalness: 0.3 }));
+      rim.scale.set(3.9, 2.05, 1);
+      rim.position.set(-2.2, 5.4, z * 5.42);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.62, 18, 14), new THREE.MeshPhysicalMaterial({ color: 0x15191a, roughness: 0.08, clearcoat: 1 }));
+      eye.position.set(head.c.x + 2.55, head.c.y + 0.75, z * 3.05);
+      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint.position.set(head.c.x + 2.95, head.c.y + 1.02, z * 3.38);
+      this.duckBody.add(rim, eye, glint);
     }
     this.duckBody.add(this.key);
     this.duck.add(this.duckBody);
@@ -401,15 +432,12 @@ export class Stage {
   private buildCat() {
     const fur = new THREE.MeshStandardMaterial({ color: 0x2d3836, roughness: 0.85 });
     const L = this.L;
-    const sign = canvasTexture(400, 144, k => {
-      k.fillStyle = '#16333a'; k.fillRect(0, 0, 400, 144);
-      k.strokeStyle = '#ff9db0'; k.lineWidth = 10; k.strokeRect(10, 10, 380, 124);
-      k.fillStyle = '#ffc2cf'; k.font = '800 82px system-ui, sans-serif'; k.textAlign = 'center'; k.textBaseline = 'middle';
-      k.fillText('MEOW', 200, 78);
-    });
-    const board = new THREE.Mesh(new THREE.BoxGeometry(10, 3.6, 1.2), new THREE.MeshStandardMaterial({ map: sign, emissiveMap: sign, emissive: 0xffffff, emissiveIntensity: 0.75, roughness: 0.6 }));
-    board.position.set(L.cat.x, L.cat.y - 5.4, 1.2);
-    this.scene.add(board);
+    // The cat sits on a small ledge in the strip of wall between two window columns, so it never
+    // hides a window and no window has to be left out for it.
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.6, 2.6), new THREE.MeshStandardMaterial({ color: 0xf1e3c8, roughness: 0.9 }));
+    ledge.position.set(L.cat.x, L.cat.y - 3.9, 1.3);
+    ledge.receiveShadow = true;
+    this.scene.add(ledge);
     const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), fur); body.scale.set(2.3, 2.7, 1.9); body.position.y = 2.6;
     const head = new THREE.Mesh(new THREE.SphereGeometry(1.9, 24, 18), fur); head.position.set(-0.2, 5.9, 0.5);
     this.cat.add(body, head);
@@ -503,7 +531,7 @@ export class Stage {
         const tex = await new THREE.TextureLoader().loadAsync(`${base}assets/${file}`);
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
-        if (slot === 'floor') { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 5); }
+        if (slot === 'floor') { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(TABLE.w / 180, TABLE.d / 180); }
         if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(3, 1); tex.offset.set(-1, 0); }
         mat.map = tex;
         mat.needsUpdate = true;

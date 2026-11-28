@@ -34,7 +34,8 @@ export const scene02 = {
   residents: [[1, 0], [2, 1], [3, 2], [4, 0], [3, 0], [4, 2], [5, 1], [2, 3], [4, 3]] as [number, number][],
   lamp: { x: 0, y: 4, min: 58, max: 124 },
   duck: { z: 40, min: -14, max: 14, enterFrom: -52 },
-  cat: { x: 31.5, y: 21 },
+  /** Centre of the cat. x is midway between two window columns. */
+  cat: { x: 30, y: 25.5 },
   /** How much of the outline a take must match to be a keeper. */
   keeper: 0.72,
   beats: [

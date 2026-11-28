@@ -74,19 +74,24 @@ export function maskTop(m: Uint8Array, g: Grid): number {
 }
 
 /**
- * The wind-up duck, facing +x, standing on y = 0. Every part is an ellipsoid;
- * the renderer builds the toy from this same list.
+ * The wind-up duck, facing +x, standing on y = 0, 16 cm tall. Proportions are
+ * taken from the approved concept sheet (docs/concept/wind-up-duck.png): a
+ * round head about as wide as the body is tall, a low two-loop key behind it,
+ * a short flat bill. Every part is an ellipsoid; the renderer builds the toy
+ * from this same list, so the shadow that is drawn is the shadow that is judged.
+ * The key is solid here: the concept's two holes would let light through.
  */
 export const DUCK: (Ellipsoid & { part: 'body' | 'bill' | 'key' | 'foot' })[] = [
-  { part: 'body', c: { x: -1.2, y: 4.9, z: 0 }, r: { x: 6.6, y: 4.3, z: 4.6 } },
-  { part: 'body', c: { x: 2.4, y: 8.1, z: 0 }, r: { x: 3.0, y: 3.2, z: 2.8 } },
-  { part: 'body', c: { x: 3.4, y: 11.7, z: 0 }, r: { x: 4.0, y: 4.0, z: 3.8 } },
-  { part: 'body', c: { x: -7.2, y: 7.3, z: 0 }, r: { x: 2.4, y: 1.7, z: 1.8 } },
-  { part: 'body', c: { x: -1.0, y: 5.6, z: 4.3 }, r: { x: 4.2, y: 2.6, z: 1.2 } },
-  { part: 'body', c: { x: -1.0, y: 5.6, z: -4.3 }, r: { x: 4.2, y: 2.6, z: 1.2 } },
-  { part: 'bill', c: { x: 7.7, y: 11.1, z: 0 }, r: { x: 2.6, y: 1.0, z: 2.1 } },
-  { part: 'key', c: { x: -3.4, y: 10.4, z: 0 }, r: { x: 0.5, y: 1.9, z: 0.5 } },
-  { part: 'key', c: { x: -3.4, y: 13.2, z: 0 }, r: { x: 1.6, y: 1.6, z: 0.45 } },
-  { part: 'foot', c: { x: 1.0, y: 0.5, z: 2.3 }, r: { x: 2.5, y: 0.5, z: 1.6 } },
-  { part: 'foot', c: { x: 1.0, y: 0.5, z: -2.3 }, r: { x: 2.5, y: 0.5, z: 1.6 } },
+  { part: 'body', c: { x: -1.5, y: 5.0, z: 0 }, r: { x: 7.4, y: 4.0, z: 5.0 } },
+  { part: 'body', c: { x: 2.6, y: 12.3, z: 0 }, r: { x: 4.0, y: 3.9, z: 4.1 } },
+  { part: 'body', c: { x: -8.0, y: 7.9, z: 0 }, r: { x: 1.3, y: 1.5, z: 1.2 } },
+  { part: 'body', c: { x: -2.2, y: 5.4, z: 4.7 }, r: { x: 4.2, y: 2.3, z: 0.8 } },
+  { part: 'body', c: { x: -2.2, y: 5.4, z: -4.7 }, r: { x: 4.2, y: 2.3, z: 0.8 } },
+  { part: 'bill', c: { x: 7.4, y: 11.4, z: 0 }, r: { x: 2.0, y: 0.95, z: 1.9 } },
+  { part: 'key', c: { x: -3.6, y: 9.5, z: 0 }, r: { x: 0.45, y: 1.1, z: 0.45 } },
+  { part: 'key', c: { x: -3.6, y: 11.2, z: 0 }, r: { x: 1.8, y: 0.95, z: 0.35 } },
+  { part: 'foot', c: { x: -4.4, y: 0.6, z: 2.2 }, r: { x: 1.5, y: 0.6, z: 1.3 } },
+  { part: 'foot', c: { x: 2.2, y: 0.6, z: 2.2 }, r: { x: 1.5, y: 0.6, z: 1.3 } },
+  { part: 'foot', c: { x: -4.4, y: 0.6, z: -2.2 }, r: { x: 1.5, y: 0.6, z: 1.3 } },
+  { part: 'foot', c: { x: 2.2, y: 0.6, z: -2.2 }, r: { x: 1.5, y: 0.6, z: 1.3 } },
 ];
