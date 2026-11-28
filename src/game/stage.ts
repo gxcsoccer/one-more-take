@@ -548,7 +548,8 @@ export class Stage {
     try {
       manifest = await (await fetch(`${base}assets/manifest.json`)).json();
     } catch {
-      return; // no art delivered yet
+      this.artReady = true; // no art delivered: loading is over, placeholders everywhere
+      return;
     }
     // Every file is on its own: one that fails to load leaves its placeholder and nothing else.
     const surfaces = Object.entries(manifest.slots ?? {}).map(async ([slot, file]) => {

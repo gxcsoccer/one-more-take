@@ -231,6 +231,7 @@ try {
 
   // One missing texture must cost only itself. Serve a 404 for the table top on a second page:
   // the sky, the residents, the blocks and the clapperboard must all still load.
+  await page.waitForFunction(() => window.__omt?.art.ready, null, { timeout: 30000 * SLOW });
   const all = (await omt('o.art.loaded')).sort();
   for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
   const lame = await browser.newPage({ viewport: page.viewportSize() });
