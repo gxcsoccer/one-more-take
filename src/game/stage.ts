@@ -91,6 +91,8 @@ export class Stage {
   /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
   artLoaded: string[] = [];
   artReady = false;
+  /** Which end of the lamp model was taken to be the lens, e.g. "-x". For tests. */
+  lampLens = '';
   /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
   models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number }> = {};
   private take = 1;
@@ -628,6 +630,7 @@ export class Stage {
     // Keep the glowing disc just in front of the model's lens.
     this.lens.position.set(0, this.L.lamp.y, -0.08);
     this.lens.scale.setScalar(((lensRadius * k) / 2.5) * 0.78);
+    this.lampLens = `${front > 0 ? '+' : '-'}${axis}`;
     this.models.lamp = { height: size.y * k, width: size[other] * k, depth: len * k, lensHeight: (lensY - box.min.y) * k, triangles };
     this.artLoaded.push('model:lamp');
   }

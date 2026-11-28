@@ -237,6 +237,8 @@ try {
   // and it must be the size of a toy, not a prop that swallows the track.
   const lampModel = (await omt('o.models')).lamp;
   if (!lampModel) fail('the spotlight model did not load');
+  // Checked by rendering this file from both ends: the lens is at the model's −x end, the dome at +x.
+  if ((await omt('o.lampLens')) !== '-x') fail(`the lens end of the spotlight was taken to be ${await omt('o.lampLens')}; in lamp.glb it is -x`);
   if (Math.abs(lampModel.lensHeight - 4) > 0.05) fail(`spotlight lens is ${lampModel.lensHeight} cm above the table, must be 4`);
   if (lampModel.height < 6 || lampModel.height > 10 || lampModel.depth > 13 || lampModel.width > 10) fail(`spotlight size is off: ${JSON.stringify(lampModel)}`);
   console.log(`spotlight model: ${JSON.stringify(Object.fromEntries(Object.entries(lampModel).map(([k, v]) => [k, +v.toFixed(2)])))}`);
