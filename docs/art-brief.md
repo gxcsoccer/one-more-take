@@ -89,7 +89,7 @@
 
 调用和下载
 
-- API 需要支持该功能的付费套餐和预充值的 API 额度。表中模型配标准几何、2K 贴图时每次 30 点，纯网格 20 点。灯和猫各做一次约 60 点，各做三次约 180 点。先做首件可以用 30 点验证比例、材质和接入效果。[套餐](https://help.meshy.ai/en/articles/15696428-what-is-included-on-the-free-plan) · [API 计价](https://docs.meshy.ai/en/api/pricing)
+- 2026-11-28，本项目的 Premium 账号通过 API 生成首件聚光灯，任务记录显示实际扣除 30 点，来自套餐月度积分。调用前可用 `GET /openapi/v1/balance` 查看本账号的可用余额，完成后用任务的 `consumed_credits` 对账。按本批标准几何和 2K 贴图配置估算，灯和猫各生成一次共 60 点，重试按实际任务记录计费。[余额接口](https://docs.meshy.ai/en/api/balance) · [API 计价](https://docs.meshy.ai/en/api/pricing)
 - 普通 API 任务的文件最多保留 3 天。任务到达 `SUCCEEDED` 后下载 `model_urls.glb` 和 `thumbnail_url`，签名链接的有效期以任务的 `expires_at` 为准。[文件保留和链接有效期](https://docs.meshy.ai/en/api/asset-retention)
 - 密钥在 https://www.meshy.ai/developers/keys 创建，建议给它设一个每月额度上限。密钥只放在本机的环境变量里（例如 `MESHY_API_KEY`），**不要写进任何文件、提交记录、PR 或聊天消息**。
 
