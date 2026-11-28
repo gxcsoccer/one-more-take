@@ -41,7 +41,7 @@ export const scene02 = {
   beats: [
     { id: 'play', keeper: 0.88, rehearsalLight: true, movable: ['lamp'], target: { lampZ: 72, markX: 3 }, start: { lampZ: 118, markX: 3 }, cat: false, objectives: ['L02', 'L04'] },
     { id: 'dark', rehearsalLight: false, movable: ['lamp'], target: { lampZ: 61, markX: 3 }, start: { lampZ: 118 }, cat: false, objectives: ['L02', 'L04', 'L05', 'I04'] },
-    { id: 'cat', rehearsalLight: false, movable: ['lamp', 'mark'], target: { lampZ: 66, markX: -2 }, start: null, cat: true, objectives: ['L03', 'L04', 'L05', 'I01', 'I04'] },
+    { id: 'cat', rehearsalLight: false, movable: ['lamp', 'mark'], target: { lampZ: 66, markX: -0.5 }, start: null, cat: true, objectives: ['L03', 'L04', 'L05', 'I01', 'I04'] },
   ] as Beat[],
 };
 
@@ -65,29 +65,52 @@ export const CAT = {
   head: { c: { x: -0.2, y: 5.9, z: 0.5 }, r: 1.9 },
 };
 
-/** Ten points spread over the cat's body and head. The tail and the animation are left out on purpose. */
-export function catPoints(): Vec3[] {
+/**
+ * Points on the cat's front surface, the side that faces the lamp and the audience, spread
+ * evenly over what can be seen of its body and head. Evenly by area, so the share of points
+ * in shadow is the share of the visible cat in shadow. The tail and the animation are left
+ * out on purpose.
+ */
+export function catPoints(step = 0.55): Vec3[] {
   const { seat, body, head } = CAT, out: Vec3[] = [];
-  for (const [dx, dy] of [[0, 0], [0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]]) {
-    out.push({ x: seat.x + body.c.x + dx * body.r.x, y: seat.y + body.c.y + dy * body.r.y, z: seat.z + body.c.z });
-    out.push({ x: seat.x + head.c.x + dx * head.r, y: seat.y + head.c.y + dy * head.r, z: seat.z + head.c.z });
-  }
+  const front = (c: Vec3, rx: number, ry: number, rz: number, skip?: (x: number, y: number) => boolean) => {
+    for (let y = -ry + step / 2; y < ry; y += step) for (let x = -rx + step / 2; x < rx; x += step) {
+      const u = x / rx, v = y / ry, d = 1 - u * u - v * v;
+      if (d <= 0) continue;
+      const p = { x: seat.x + c.x + x, y: seat.y + c.y + y, z: seat.z + c.z + rz * Math.sqrt(d) };
+      if (!skip?.(p.x, p.y)) out.push(p);
+    }
+  };
+  front(head.c, head.r, head.r, head.r);
+  // The part of the body that the head stands in front of is not seen.
+  front(body.c, body.r.x, body.r.y, body.r.z, (x, y) => Math.hypot(x - seat.x - head.c.x, y - seat.y - head.c.y) < head.r);
   return out;
 }
+const CAT_POINTS = catPoints();
 
-/** Share of the cat's body and head that the duck hides from the lamp. */
+/** Share of the visible cat (body and head) that the duck hides from the lamp. */
 export function catShade(s: Setup): number {
-  const lamp = lampAt(s), pose = duckAt(s.markX), pts = catPoints();
-  return pts.filter(p => hidden(lamp, p, DUCK, pose)).length / pts.length;
+  const lamp = lampAt(s), pose = duckAt(s.markX);
+  let n = 0;
+  for (const p of CAT_POINTS) if (hidden(lamp, p, DUCK, pose)) n++;
+  return n / CAT_POINTS.length;
 }
 
-/** Is the cat sitting in the duck's shadow? A clipped ear or tail does not count: at least 40% of it must be dark. */
+/** Is the cat in the duck's shadow? A clipped ear or flank does not count: at least 40% of what can be seen of it must be dark. */
 export const catInShadow = (s: Setup): boolean => catShade(s) >= 0.4;
 
 export interface Verdict { match: number; catDark: boolean; keeper: boolean }
 
+const targetMasks = new Map<string, Uint8Array>();
+function targetMask(t: Setup): Uint8Array {
+  const key = `${t.lampZ}:${t.markX}`;
+  let m = targetMasks.get(key);
+  if (!m) targetMasks.set(key, (m = maskOf(t)));
+  return m;
+}
+
 export function judge(beat: Beat, s: Setup): Verdict {
-  const match = overlap(maskOf(s), maskOf(beat.target));
+  const match = overlap(maskOf(s), targetMask(beat.target));
   const catDark = beat.cat && catInShadow(s);
   return { match, catDark, keeper: match >= (beat.keeper ?? scene02.keeper) && !catDark };
 }
