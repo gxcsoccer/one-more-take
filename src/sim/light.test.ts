@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DUCK, inShadow, maskArea, maskTop, overlap, segmentHits, shadowMask, type Ellipsoid } from './light';
-import { catInShadow, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
+import { catInShadow, catPoints, catShade, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
 
 const ball: Ellipsoid[] = [{ c: { x: 0, y: 10, z: 0 }, r: { x: 5, y: 5, z: 5 } }];
 const at = (z: number) => ({ x: 0, y: 10, z });
@@ -86,7 +86,36 @@ describe('scene 02 is playable', () => {
     for (const z of lamps) if (judge(dark, { lampZ: z, markX: dark.target.markX }).keeper) expect(catInShadow({ lampZ: z, markX: dark.target.markX })).toBe(true);
   });
 
-  it('cat beat: solvable with finger room, and not by guessing', () => {
+  it('the cat is judged on its body and head, where it really sits', { timeout: 30000 }, () => {
+    // Enough points to stand for an area, all on the front surface, well clear of the wall.
+    expect(catPoints().length).toBeGreaterThan(60);
+    for (const p of catPoints()) expect(p.z).toBeGreaterThan(1.9);
+    // Found in review, measured there on the rendered cat: 22.6% shaded here, 56.8% there.
+    // The first passes the outline and must not be cut for the cat; the second is truly dark.
+    expect(catShade({ lampZ: 61.5, markX: -1.5 })).toBeLessThan(0.4);
+    expect(judge(cat, { lampZ: 61.5, markX: -1.5 }).catDark).toBe(false);
+    expect(catShade({ lampZ: 58.5, markX: 7.5 })).toBeGreaterThan(0.4);
+    expect(catInShadow({ lampZ: 58.5, markX: 7.5 })).toBe(true);
+    // Found in review: a shadow that only clips the cat must not be reported as "the cat is in
+    // the dark". Such set-ups exist, and none of them may be called dark.
+    let clipped = 0;
+    for (const z of lamps) for (const x of marks) {
+      const shade = catShade({ lampZ: z, markX: x });
+      if (shade > 0 && shade < 0.4) { clipped++; expect(judge(cat, { lampZ: z, markX: x }).catDark).toBe(false); }
+    }
+    expect(clipped).toBeGreaterThan(20);
+    // The cat still matters: some set-ups fill the outline well enough and are cut only because of it.
+    let cutForCat = 0;
+    for (const z of lamps) for (const x of marks) { const v = judge(cat, { lampZ: z, markX: x }); if (v.match >= S.keeper && v.catDark) cutForCat++; }
+    expect(cutForCat).toBeGreaterThan(0);
+    // The two set-ups the story depends on, at their extremes: fully dark, then fully lit.
+    expect(catShade(dark.target)).toBe(1);
+    expect(catShade(cat.target)).toBe(0);
+    // And every way of passing the lights-out beat leaves the cat wholly in shadow.
+    for (const z of lamps) if (judge(dark, { lampZ: z, markX: dark.target.markX }).keeper) expect(catShade({ lampZ: z, markX: dark.target.markX })).toBe(1);
+  });
+
+  it('cat beat: solvable with finger room, and not by guessing', { timeout: 30000 }, () => {
     let wins = 0, widest = 0;
     for (const z of lamps) { let run = 0; for (const x of marks) { if (judge(cat, { lampZ: z, markX: x }).keeper) { wins++; widest = Math.max(widest, ++run); } else run = 0; } }
     const share = wins / (lamps.length * marks.length);
