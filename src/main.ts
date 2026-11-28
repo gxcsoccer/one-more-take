@@ -502,6 +502,7 @@ Object.assign(window, {
     get art() { return { ready: stage.artReady, loaded: [...stage.artLoaded] }; },
     get models() { return JSON.parse(JSON.stringify(stage.models)); },
     get lampLens() { return stage.lampLens; },
+    lampContact: (shift = 0) => stage.lampContact(shift),
     get pixelRatio() { return stage.pixelRatio; },
     get lowestPixelRatio() { return stage.lowestRatio; },
     get handles() {

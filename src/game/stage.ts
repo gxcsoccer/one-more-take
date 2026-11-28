@@ -94,6 +94,7 @@ export class Stage {
   /** Which end of the lamp model was taken to be the lens, e.g. "-x". For tests. */
   lampLens = '';
   private rails: THREE.Mesh[] = [];
+  private lampModel: THREE.Object3D | null = null;
   private sleepers: THREE.Mesh[] = [];
   /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
   models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number; wheelGauge?: number; wheelBottom?: number; railTop?: number; railX?: number }> = {};
@@ -579,6 +580,35 @@ export class Stage {
     this.artReady = true;
   }
 
+  /**
+   * How the lamp model's wheels meet the rails, measured from the meshes as they stand in the
+   * scene and not from the numbers used to place them. For each of the four wheels: how many of
+   * the model's vertices lie over the rail, and the gap between the lowest of them and the rail
+   * top (cm). `shift` moves the rails outwards for the measurement only, to prove the check bites.
+   */
+  lampContact(shift = 0): { wheel: string; over: number; gap: number }[] | null {
+    if (!this.lampModel) return null;
+    this.lampRig.position.set(this.L.lamp.x, 0, this.lampZ);
+    this.lampRig.updateMatrixWorld(true);
+    const verts: THREE.Vector3[] = [];
+    this.lampModel.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const pos = m.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) verts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    });
+    const midZ = (Math.min(...verts.map(v => v.z)) + Math.max(...verts.map(v => v.z))) / 2;
+    return this.rails.flatMap(rail => {
+      rail.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(rail), side = Math.sign(rail.position.x - this.L.lamp.x) || 1;
+      b.min.x += side * shift; b.max.x += side * shift;
+      return (['front', 'back'] as const).map(end => {
+        const over = verts.filter(v => v.x >= b.min.x && v.x <= b.max.x && (end === 'front' ? v.z < midZ : v.z >= midZ));
+        return { wheel: `${side < 0 ? 'left' : 'right'}-${end}`, over: over.length, gap: over.length ? Math.min(...over.map(v => v.y)) - b.max.y : Infinity };
+      });
+    });
+  }
+
   /** Generated 3D models. Each is optional; a missing or broken one keeps its placeholder. */
   private async loadModels(base: string, models: Record<string, string>) {
     if (!models.lamp) return;
@@ -637,6 +667,7 @@ export class Stage {
     holder.scale.setScalar(k);
     for (const old of [...this.lampRig.children]) if (old !== this.lens) this.lampRig.remove(old);
     this.lampRig.add(holder);
+    this.lampModel = holder;
     // Keep the glowing disc just in front of the model's lens.
     this.lens.position.set(0, this.L.lamp.y, -0.08);
     this.lens.scale.setScalar(((lensRadius * k) / 2.5) * 0.78);
