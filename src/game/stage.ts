@@ -93,8 +93,10 @@ export class Stage {
   artReady = false;
   /** Which end of the lamp model was taken to be the lens, e.g. "-x". For tests. */
   lampLens = '';
+  private rails: THREE.Mesh[] = [];
+  private sleepers: THREE.Mesh[] = [];
   /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
-  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number }> = {};
+  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number; wheelGauge?: number; wheelBottom?: number; railTop?: number; railX?: number }> = {};
   private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
@@ -343,8 +345,8 @@ export class Stage {
   private buildTracks() {
     const L = this.L, steel = new THREE.MeshStandardMaterial({ color: 0x2c2724, roughness: 0.5, metalness: 0.6 }), wood = new THREE.MeshStandardMaterial({ color: 0x4d3b2f, roughness: 1 });
     const len = L.lamp.max - L.lamp.min + 16, mid = (L.lamp.max + L.lamp.min) / 2;
-    for (const x of [-2.8, 2.8]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, len), steel); r.position.set(L.lamp.x + x, 0.45, mid); this.scene.add(r); }
-    for (let z = L.lamp.min - 6; z <= L.lamp.max + 6; z += 5) { const s = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 1.1), wood); s.position.set(L.lamp.x, 0.16, z); s.receiveShadow = true; this.scene.add(s); }
+    for (const x of [-2.8, 2.8]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, len), steel); r.position.set(L.lamp.x + x, 0.45, mid); this.scene.add(r); this.rails.push(r); }
+    for (let z = L.lamp.min - 6; z <= L.lamp.max + 6; z += 5) { const s = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 1.1), wood); s.position.set(L.lamp.x, 0.16, z); s.receiveShadow = true; this.scene.add(s); this.sleepers.push(s); }
     const dl = L.duck.max - L.duck.enterFrom + 6, dm = (L.duck.max + L.duck.enterFrom) / 2;
     for (const z of [-2.3, 2.3]) { const r = new THREE.Mesh(new THREE.BoxGeometry(dl, 0.25, 0.4), steel); r.position.set(dm, 0.13, L.duck.z + z); this.scene.add(r); }
 
@@ -617,10 +619,18 @@ export class Stage {
     const lensY = Math.max(...lensPts.map(p => p.y)) - lensRadius;
     // Scale so the lens centre sits at the height of the simulated light source. That height
     // decides where shadows fall, so it is the one measurement that must be exact.
-    const k = this.L.lamp.y / (lensY - box.min.y);
+    // The wheels ride on the rails, so the model stands on the rail tops, and the scale is what
+    // puts the lens centre at the light source's height from there.
+    const RAIL_TOP = 0.35;
+    const k = (this.L.lamp.y - RAIL_TOP) / (lensY - box.min.y);
+    // Where the wheels touch down: the lowest sliver of the model, either side of the centre line.
+    const treads = pts.filter(p => p.y < box.min.y + size.y * 0.02);
+    const gauge = (treads.reduce((a, p) => a + Math.abs(p[other] - lensSide), 0) / Math.max(1, treads.length)) * k;
+    // Refuse a model that cannot be placed, before anything of the placeholder is removed.
+    if (!triangles || !lensPts.length || !treads.length || !(k > 0) || !Number.isFinite(k) || !(gauge > 0.5)) throw new Error('lamp model has no usable geometry');
     // Move the lens centre's foot to the origin, then turn the lens towards the wall (−z) and scale.
     const lensTip = front > 0 ? ends.max : ends.min;
-    model.position.set(axis === 'x' ? -lensTip : -lensSide, -box.min.y, axis === 'z' ? -lensTip : -lensSide);
+    model.position.set(axis === 'x' ? -lensTip : -lensSide, -box.min.y + RAIL_TOP / k, axis === 'z' ? -lensTip : -lensSide);
     const holder = new THREE.Group();
     holder.add(model);
     holder.rotation.y = axis === 'x' ? (front > 0 ? Math.PI / 2 : -Math.PI / 2) : front > 0 ? Math.PI : 0;
@@ -631,7 +641,10 @@ export class Stage {
     this.lens.position.set(0, this.L.lamp.y, -0.08);
     this.lens.scale.setScalar(((lensRadius * k) / 2.5) * 0.78);
     this.lampLens = `${front > 0 ? '+' : '-'}${axis}`;
-    this.models.lamp = { height: size.y * k, width: size[other] * k, depth: len * k, lensHeight: (lensY - box.min.y) * k, triangles };
+    // Lay the track to this lamp's gauge: low rails under the wheel treads, sleepers below them.
+    this.rails.forEach((r, i) => { r.scale.y = 0.6; r.position.y = RAIL_TOP - 0.15; r.position.x = this.L.lamp.x + (i ? gauge : -gauge); });
+    for (const sl of this.sleepers) { sl.scale.y = 0.66; sl.position.y = 0.1; sl.scale.x = (gauge * 2 + 2.4) / 8.4; }
+    this.models.lamp = { height: RAIL_TOP + size.y * k, width: size[other] * k, depth: len * k, lensHeight: RAIL_TOP + (lensY - box.min.y) * k, triangles, wheelGauge: gauge, wheelBottom: RAIL_TOP, railTop: this.rails[0].position.y + 0.15, railX: Math.abs(this.rails[0].position.x - this.L.lamp.x) };
     this.artLoaded.push('model:lamp');
   }
 

@@ -119,4 +119,5 @@ Turn the exact same handmade cardboard building from reference 1 by approximatel
 - 实际扣费 30 点，直接从套餐的月度积分里扣，没有单独的 API 额度。
 - 产出 6063 个三角面，一个网格，三张 2K 贴图（颜色、金属度与粗糙度、法线），原文件 10.3 MB。
 - 入库前用 `node scripts/shrink-glb.mjs` 把贴图缩到 1024 并转成 JPEG，得到 [`public/assets/models/lamp.glb`](../../public/assets/models/lamp.glb)，1.3 MB。
-- 接入时由代码自动找出镜片所在的一端并转向墙面，再按“镜片中心离桌面 4 cm”缩放。缩放后整灯高 7.9 cm、宽 5.5 cm、长 8.5 cm。
+- 接入时由代码自动找出镜片所在的一端并转向墙面，车轮落在 0.35 cm 高的轨顶上，再按“镜片中心离桌面 4 cm”缩放。缩放后整灯高 7.6 cm、宽 5.0 cm、长 7.8 cm。轨道按这盏灯的轮距重新铺设。
+- Meshy 返回的预览图：[lamp-model.png](previews/lamp-model.png)。
