@@ -121,3 +121,16 @@ Turn the exact same handmade cardboard building from reference 1 by approximatel
 - 入库前用 `node scripts/shrink-glb.mjs` 把贴图缩到 1024 并转成 JPEG，得到 [`public/assets/models/lamp.glb`](../../public/assets/models/lamp.glb)，1.3 MB。
 - 接入时由代码自动找出镜片所在的一端并转向墙面，车轮落在 0.35 cm 高的轨顶上，再按“镜片中心离桌面 4 cm”缩放。缩放后灯顶离桌面 7.6 cm（模型自身从轮底到灯顶 7.2 cm）、宽 5.0 cm、长 7.8 cm。轨道按这盏灯的轮距重新铺设。
 - Meshy 返回的预览图：[lamp-model.png](previews/lamp-model.png)。
+
+## 黑猫模型的生成记录
+
+2026-11-29 用同一个接口和同一组参数生成，输入为黑猫的正面和侧后方两张参考图（正面在前）。
+
+- 实际扣费 30 点。
+- 产出 6208 个三角面，一个网格，三张 2K 贴图，原文件 7.5 MB。
+- 用 `node scripts/shrink-glb.mjs` 缩贴图后得到 [`public/assets/models/cat.glb`](../../public/assets/models/cat.glb)，0.8 MB。
+- 接入时由代码从贴图里找出头上的黄色眼睛，把猫转到眼睛朝向观众；再按“头的半径等于判定用的头”缩放。缩放后猫高 8.3 cm、宽 4.9 cm、深 4.9 cm（宽和深都含尾巴）。
+- 模型的身体比占位的猫窄、前后更深，所以判定用的形状（`src/game/scene02.ts` 的 `CAT`）一并改了：头半径 1.9 → 1.8，身体半宽 2.3 → 1.9，座位离墙 1.9 → 2.8 cm，窗台相应加深。改后单元测试里的两组回归位置、第三拍目标和两个“轮廓达标但猫被挡”的位置全部照旧通过。
+- 轮廓验收：从正面看，判定取样点有 95% 落在模型上，判定表面和模型表面平均相差 0.25 cm。自动试玩对这两个数设了下限（92%）和上限（0.35 cm）。
+- 模型是单个网格，尾巴和眼睛不能单独动。占位猫的摇尾巴和眯眼没有了，保留弹出、跳起和生气时转身。
+- Meshy 返回的预览图：[cat-model.png](previews/cat-model.png)。
