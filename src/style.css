@@ -97,3 +97,13 @@ body.film #caption { bottom: 1.4vh; max-width: 94vw; padding: calc(var(--u) * .5
 
 /* The demonstrating hand: shows what to drag or tap when the player is idle. */
 #hint { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; font-size: calc(var(--u) * 6.5); line-height: 1; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .6)); will-change: transform, opacity; }
+
+/* The list of scenes. */
+body.lot { background: radial-gradient(120% 90% at 50% 20%, #17414a, #0a1519); }
+.lot { display: grid; gap: calc(var(--u) * 1.4); }
+.slate-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: calc(var(--u) * 2); width: 100%; padding: calc(var(--u) * 1.6) calc(var(--u) * 2.2); border-radius: calc(var(--u) * 2); background: #1b2224; color: #f3e7c9; text-align: left; box-shadow: 0 .2em 0 #0c1011; }
+.slate-card:active { transform: translateY(.12em); box-shadow: 0 .08em 0 #0c1011; }
+.slate-card i { font-style: normal; font-weight: 900; font-size: calc(var(--u) * 4.4); color: #ffcf6b; font-variant-numeric: tabular-nums; }
+.slate-card b { font-size: calc(var(--u) * 2.8); font-weight: 850; }
+.slate-card span { font-size: calc(var(--u) * 1.9); color: #9fb3ad; white-space: nowrap; }
+#slate { cursor: pointer; pointer-events: auto; }
