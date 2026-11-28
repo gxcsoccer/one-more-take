@@ -16,7 +16,7 @@ type Text = Record<Lang, string>;
 export interface Question {
   id: string;
   /** Beat after which this item fits best. */
-  beat: 'play' | 'dark' | 'cat';
+  beat: 'play' | 'dark' | 'cat' | 'spot' | 'guess' | 'star';
   /** Curriculum rows it tests. */
   objectives: string[];
   ask: Text;
@@ -127,6 +127,42 @@ export const QUESTIONS: Question[] = [
     ],
     why: { en: 'The cat is dark because the duck is on the straight line between the lamp and the cat. Move the duck off that line and the light reaches the cat.', zh: '猫变暗是因为鸭子正好在灯和猫之间的直线上。把鸭子挪开，光就能照到猫。' },
   },
+  {
+    id: 'S-source-pick', beat: 'spot', objectives: ['L01'],
+    ask: { en: 'Which of these is a light source?', zh: '下面哪一个是光源？' },
+    options: [{ en: 'A lit lantern', zh: '点亮的灯笼' }, { en: 'A mirror', zh: '镜子' }, { en: 'The Moon', zh: '月亮' }, { en: 'A shiny yellow toy duck', zh: '闪亮的黄色玩具鸭' }],
+    why: { en: 'A light source gives out its own light. The mirror, the Moon and the duck only reflect light that falls on them.', zh: '光源自己会发光。镜子、月亮和鸭子只是反射照到它们身上的光。' },
+  },
+  {
+    id: 'S-moon', beat: 'spot', objectives: ['L01'],
+    ask: { en: 'On a clear night we can see the Moon. Why?', zh: '晴朗的夜晚我们能看见月亮。为什么？' },
+    options: [{ en: 'It reflects light from the Sun into our eyes.', zh: '它把太阳的光反射进我们的眼睛。' }, { en: 'It gives out its own light.', zh: '它自己发光。' }, { en: 'Our eyes send light to it.', zh: '我们的眼睛向它发出光。' }, { en: 'The dark sky makes it glow.', zh: '黑暗的天空让它发亮。' }],
+    why: { en: 'The Moon is not a light source. We see it because it reflects sunlight.', zh: '月亮不是光源。我们看见它，是因为它反射太阳光。' },
+  },
+  {
+    id: 'S-dark-room', beat: 'guess', objectives: ['L01'],
+    ask: { en: 'Every lamp in the studio is off and no light gets in. What can the camera see?', zh: '片场所有的灯都关了，也没有光进来。摄影机能拍到什么？' },
+    options: [{ en: 'Only things that give out their own light', zh: '只有自己发光的东西' }, { en: 'Only shiny things', zh: '只有闪亮的东西' }, { en: 'Only white things', zh: '只有白色的东西' }, { en: 'Everything, but dimmer', zh: '所有东西，只是暗一些' }],
+    why: { en: 'With no light to reflect, shiny and white things cannot be seen. Light sources can, because they give out light.', zh: '没有光可以反射，闪亮和白色的东西都看不见。光源能被看见，因为它们自己发光。' },
+  },
+  {
+    id: 'S-mirror', beat: 'guess', objectives: ['L01'],
+    ask: { en: 'In the dark studio the mirror ball could not be seen. Why?', zh: '在黑暗的片场里看不见镜面球。为什么？' },
+    options: [{ en: 'It gives out no light, and there was no light for it to reflect.', zh: '它不发光，也没有光可以让它反射。' }, { en: 'Mirrors only work in the daytime.', zh: '镜子只在白天起作用。' }, { en: 'It was switched off.', zh: '它被关掉了。' }, { en: 'It was too far from the camera.', zh: '它离摄影机太远。' }],
+    why: { en: 'A mirror reflects light very well, but it is not a light source. No light in, no light out.', zh: '镜子很会反射光，但它不是光源。没有光照进来，就没有光反射出去。' },
+  },
+  {
+    id: 'S-see-duck', beat: 'star', objectives: ['L01'],
+    ask: { en: 'With the candle beside it, the camera could see the duck. Which path did the light take?', zh: '把蜡烛放在旁边，摄影机就拍到了鸭子。光走的是哪条路？' },
+    options: [{ en: 'Candle → duck → camera', zh: '蜡烛 → 鸭子 → 摄影机' }, { en: 'Camera → duck → candle', zh: '摄影机 → 鸭子 → 蜡烛' }, { en: 'Duck → candle → camera', zh: '鸭子 → 蜡烛 → 摄影机' }, { en: 'Camera → candle → duck', zh: '摄影机 → 蜡烛 → 鸭子' }],
+    why: { en: 'Light leaves the source, bounces off the duck, and enters the camera (or our eyes).', zh: '光从光源出发，被鸭子反射，再进入摄影机（或我们的眼睛）。' },
+  },
+  {
+    id: 'S-mirror-beside', beat: 'star', objectives: ['L01'],
+    ask: { en: 'Mei stands a mirror beside the duck in the dark studio. Can the camera see the duck now?', zh: '小美在黑暗的片场里把镜子放在鸭子旁边。现在摄影机能拍到鸭子吗？' },
+    options: [{ en: 'No. The mirror has no light of its own to send to the duck.', zh: '不能。镜子自己没有光可以照到鸭子。' }, { en: 'Yes. Mirrors make light.', zh: '能。镜子会制造光。' }, { en: 'Yes, but only its shadow.', zh: '能，但只能拍到它的影子。' }, { en: 'No. The duck is too small.', zh: '不能。鸭子太小了。' }],
+    why: { en: 'To be seen, the duck needs light from a source to reflect. A mirror is not a source.', zh: '要被看见，鸭子需要有来自光源的光可以反射。镜子不是光源。' },
+  },
 ];
 
 const SEEN = 'omt.quiz.seen.v1';
@@ -156,6 +192,8 @@ export interface OpenPart {
 }
 export interface OpenQuestion {
   id: string;
+  /** The scene it closes. */
+  scene: string;
   objectives: string[];
   stem: Text;
   parts: OpenPart[];
@@ -165,7 +203,7 @@ const opt = (...pairs: [string, string][]): Text[] => pairs.map(([en, zh]) => ({
 
 export const OPEN_QUESTIONS: OpenQuestion[] = [
   {
-    id: 'O-bigger', objectives: ['L02', 'L04'],
+    id: 'O-bigger', scene: '02', objectives: ['L02', 'L04'],
     stem: { en: 'In the dark, the second chalk outline was bigger than the first. The director moved only the lamp to fill it.', zh: '关灯以后，第二个粉笔轮廓比第一个大。导演只移动了灯，就把它填满了。' },
     parts: [
       {
@@ -181,7 +219,7 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
     ],
   },
   {
-    id: 'O-cat', objectives: ['L02', 'L03'],
+    id: 'O-cat', scene: '02', objectives: ['L02', 'L03'],
     stem: { en: 'After one take, the cat on the sign was sitting in the dark even though the lamp was on.', zh: '有一条拍完以后，灯明明亮着，招牌上的猫却坐在黑暗里。' },
     parts: [
       {
@@ -197,7 +235,7 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
     ],
   },
   {
-    id: 'O-fair', objectives: ['I01', 'L03', 'L04'],
+    id: 'O-fair', scene: '02', objectives: ['I01', 'L03', 'L04'],
     stem: { en: 'Ali thinks a bigger toy always makes a bigger shadow. He puts a small duck 20 cm from the lamp and a big duck 50 cm from the lamp, and compares their shadows.', zh: '阿里认为玩具越大，影子一定越大。他把小鸭放在离灯 20 厘米处，把大鸭放在离灯 50 厘米处，然后比较两个影子。' },
     parts: [
       {
@@ -212,12 +250,30 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
       },
     ],
   },
+  {
+    id: 'O-dark-studio', scene: '01', objectives: ['L01'],
+    stem: { en: 'Every lamp in the studio was switched off. The camera could still see the candle, but not the trophy standing far from it.', zh: '片场所有的灯都关了。摄影机还能拍到蜡烛，却拍不到离它很远的奖杯。' },
+    parts: [
+      {
+        ask: { en: '(a) Why could the camera see the candle?', zh: '(a) 摄影机为什么能拍到蜡烛？' },
+        text: { en: 'The candle is a {0}. It {1} light, and that light enters the camera.', zh: '蜡烛是{0}。它{1}光，这些光进入了摄影机。' },
+        blanks: [opt(['light source', '光源'], ['reflector', '反光物'], ['shadow', '影子']), opt(['gives out its own', '自己发出'], ['only reflects', '只会反射'], ['blocks', '挡住'])],
+      },
+      {
+        ask: { en: '(b) The director wants the trophy in the shot too, without switching the studio lamps on. What should she do, and why does it work?', zh: '(b) 导演不想开片场的灯，又想把奖杯拍进去。她该怎么做？为什么这样可行？' },
+        text: { en: 'Move the candle {0} the trophy. Light from the candle is {1} by the trophy into the camera.', zh: '把蜡烛移到{0}奖杯的地方。蜡烛的光被奖杯{1}，进入摄影机。' },
+        blanks: [opt(['close to', '靠近'], ['far from', '远离'], ['behind the wall from', '隔着墙对着']), opt(['reflected', '反射'], ['made', '制造出来'], ['absorbed completely', '完全吸收'])],
+      },
+    ],
+  },
 ];
 
 const SEEN_OPEN = 'omt.open.seen.v1';
-export function nextOpenQuestion(): OpenQuestion {
+/** The next closing question for a scene, taking that scene's questions in turn. */
+export function nextOpenQuestion(scene: string): OpenQuestion {
+  const mine = OPEN_QUESTIONS.filter(q => q.scene === scene), key = scene === '02' ? SEEN_OPEN : `${SEEN_OPEN}.${scene}`;
   let n = 0;
-  try { n = Number(localStorage.getItem(SEEN_OPEN) ?? 0) || 0; } catch { /* ignore */ }
-  try { localStorage.setItem(SEEN_OPEN, String(n + 1)); } catch { /* ignore */ }
-  return OPEN_QUESTIONS[n % OPEN_QUESTIONS.length];
+  try { n = Number(localStorage.getItem(key) ?? 0) || 0; } catch { /* ignore */ }
+  try { localStorage.setItem(key, String(n + 1)); } catch { /* ignore */ }
+  return mine[n % mine.length];
 }

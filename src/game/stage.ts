@@ -19,7 +19,7 @@ import { AdaptiveResolution } from './quality';
 const ease = (cur: number, to: number, dt: number, rate: number) => cur + (to - cur) * Math.min(1, dt * rate);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
-function canvasTexture(w: number, h: number, paint: (k: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+export function canvasTexture(w: number, h: number, paint: (k: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   paint(c.getContext('2d')!);
@@ -38,10 +38,33 @@ const ROOM_FLOOR = 82;
 
 export type Pickable = 'lamp' | 'mark' | 'clapper';
 
+/**
+ * What a scene may ask of the shared stage. Scene 02's own props (the building, the tracks, the
+ * lamp, the cat) are built in every case and simply hidden on another scene's set; the scenes
+ * will get their own prop lists when the common framework is drawn out of them.
+ */
+export interface StageOptions {
+  /** Number on the clapperboard. */
+  id?: string;
+  /** 'building' is Scene 02's set. 'studio' is the bare table in front of a dark backdrop. */
+  set?: 'building' | 'studio';
+  /** Points that must be on screen in the wide view and in the film view, and where the film camera looks. */
+  frame?: { wide: [number, number, number][]; wideLook: [number, number, number]; film: [number, number, number][]; look: [number, number, number]; height: number; /** Direction from the look-at point to the wide camera. */ dir?: [number, number, number]; /** How low and how high on screen those points may sit, -1 bottom to 1 top. */ low?: number; high?: number };
+}
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(30, 1, 5, 1200);
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.PerspectiveCamera(30, 1, 5, 1200);
+  /** Everything that belongs to Scene 02 only. */
+  private set02 = new THREE.Group();
+  private skirt!: THREE.Mesh;
+  private slateMat!: THREE.MeshStandardMaterial;
+  /** The painted highlight in the duck's eyes. Paint, so it goes dark with the room. */
+  private glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  /** 0 = normal studio, 1 = every lamp in the room is off and only things that give out light can be seen. */
+  blackout = 0;
+  private black = 0;
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private raycaster = new THREE.Raycaster();
@@ -61,6 +84,8 @@ export class Stage {
   catVisible = false;
   catSulking = false;
   movable = { lamp: false, mark: false };
+  /** The tape cross where the duck stops. Hidden when the duck is moved by hand. */
+  showMark = true;
   clapperReady = false;
 
   private lampOnLevel = 0;
@@ -87,10 +112,10 @@ export class Stage {
   private clapArm!: THREE.Mesh;
   private clapT = 1;
   private slate!: { tex: THREE.CanvasTexture; paint: (take: number) => void };
-  private rings: { lamp: THREE.Mesh; mark: THREE.Mesh };
+  private rings!: { lamp: THREE.Mesh; mark: THREE.Mesh };
   private handles: Record<Pickable, THREE.Object3D>;
   private chalk!: { tex: THREE.CanvasTexture; k: CanvasRenderingContext2D };
-  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
+  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; away?: boolean; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
   private blocks: { box: THREE.Mesh; detail: THREE.Group; kind: 'a' | 'b' }[] = [];
   private clapBoard: HTMLImageElement | null = null;
   /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
@@ -117,7 +142,7 @@ export class Stage {
   private wide = { pos: new THREE.Vector3(-74, 62, 206), look: new THREE.Vector3(10, 15, 36) };
   private skins: Record<string, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = {};
 
-  constructor(private host: HTMLElement, private L: Scene02) {
+  constructor(private host: HTMLElement, private L: Scene02, private opts: StageOptions = {}) {
     this.lampZ = L.lamp.max;
     this.markX = 0;
     this.duckX = 0;
@@ -136,18 +161,22 @@ export class Stage {
     this.scene.background = new THREE.Color(0x0f2d31);
     this.scene.fog = new THREE.Fog(0x0a1519, 420, 900);
 
+    // Whatever a builder adds to the scene while `own` runs it belongs to Scene 02's set.
+    const own = (build: () => void) => { const n = this.scene.children.length; build(); for (const o of this.scene.children.slice(n)) this.set02.add(o); };
     this.buildLights();
     this.buildTable();
     this.buildBackdrop();
-    this.buildBuilding();
-    this.buildTracks();
-    this.buildLamp();
+    own(() => this.buildBuilding());
+    own(() => this.buildTracks());
+    own(() => this.buildLamp());
     this.buildDuck();
-    this.buildCat();
+    own(() => this.buildCat());
     this.buildClapper();
     this.buildConfetti();
-    this.rings = { lamp: this.ring(9), mark: this.ring(6) };
+    own(() => { this.rings = { lamp: this.ring(9), mark: this.ring(6) }; });
     this.handles = { lamp: this.handle(10), mark: this.handle(8), clapper: this.handle(13) };
+    this.set02.visible = (opts.set ?? 'building') === 'building';
+    this.scene.add(this.set02);
 
     this.composer = new EffectComposer(r);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -231,7 +260,7 @@ export class Stage {
     sky.offset.set(-1, 0);
     this.scene.add(back);
     // The backdrop carries on below the painting, down past the table's back edge.
-    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(1560, 60), new THREE.MeshBasicMaterial({ color: 0x1b4f43, toneMapped: false }));
+    const skirt = (this.skirt = new THREE.Mesh(new THREE.PlaneGeometry(1560, 60), new THREE.MeshBasicMaterial({ color: 0x1b4f43, toneMapped: false })));
     skirt.position.set(0, -64, -70);
     this.scene.add(skirt);
     // Neighbouring blocks: plain cardboard boxes with a painted band, lower than the star building.
@@ -259,7 +288,7 @@ export class Stage {
           detail.add(win);
         }
       }
-      this.scene.add(b, roof, detail);
+      this.set02.add(b, roof, detail);
       this.blocks.push({ box: b, detail, kind });
     });
   }
@@ -452,7 +481,7 @@ export class Stage {
       rim.position.set(-2.2, 5.4, z * 5.42);
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.62, 18, 14), new THREE.MeshPhysicalMaterial({ color: 0x15191a, roughness: 0.08, clearcoat: 1 }));
       eye.position.set(head.c.x + 2.55, head.c.y + 0.75, z * 3.05);
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), this.glintMat);
       glint.position.set(head.c.x + 2.95, head.c.y + 1.02, z * 3.38);
       this.duckBody.add(rim, eye, glint);
     }
@@ -500,14 +529,14 @@ export class Stage {
       k.fillStyle = '#9fb3ad'; k.font = '800 46px system-ui, sans-serif'; k.textAlign = 'left';
       k.fillText('SCENE', 30, 66); k.fillText('TAKE', 272, 66);
       k.fillStyle = '#f3e7c9'; k.font = '900 96px system-ui, sans-serif';
-      k.fillText(this.L.id, 30, 170); k.fillText(String(take), 272, 170);
+      k.fillText(this.opts.id ?? this.L.id, 30, 170); k.fillText(String(take), 272, 170);
       k.fillStyle = '#ffcf6b'; k.font = '900 96px system-ui, sans-serif'; k.textAlign = 'center';
       k.fillText('ACTION!', 256, 318);
       tex.needsUpdate = true;
     };
     this.slate = { tex, paint };
     paint(1);
-    const board = new THREE.Mesh(new THREE.BoxGeometry(16, 12, 0.9), [0, 1, 2, 3].map(() => new THREE.MeshStandardMaterial({ color: 0x1b2224, roughness: 0.6 })).concat([new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.25 }), new THREE.MeshStandardMaterial({ color: 0x1b2224 })]));
+    const board = new THREE.Mesh(new THREE.BoxGeometry(16, 12, 0.9), [0, 1, 2, 3].map(() => new THREE.MeshStandardMaterial({ color: 0x1b2224, roughness: 0.6 })).concat([(this.slateMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.25 })), new THREE.MeshStandardMaterial({ color: 0x1b2224 })]));
     board.position.y = 7;
     const stripes = canvasTexture(512, 64, s => { s.fillStyle = '#f3e7c9'; s.fillRect(0, 0, 512, 64); s.fillStyle = '#1b2224'; for (let i = -1; i < 9; i++) { s.beginPath(); s.moveTo(i * 64, 64); s.lineTo(i * 64 + 32, 64); s.lineTo(i * 64 + 64, 0); s.lineTo(i * 64 + 32, 0); s.fill(); } });
     const armMat = new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6 });
@@ -842,6 +871,8 @@ export class Stage {
     this.catHop = 1;
   }
   scare(i: number) { this.residents[i].t = 0; }
+  /** Is this neighbour at the window at all? Away, they stay below the sill. */
+  setHome(i: number, home: boolean) { this.residents[i].away = !home; }
   get residentSpots() { return this.residents.map(r => ({ x: r.x, y: r.y })); }
 
   /**
@@ -942,32 +973,32 @@ export class Stage {
    * whatever the shape of the window.
    */
   private fitWide() {
-    const L = this.L, W = L.wall;
-    const must = [
+    const L = this.L, W = L.wall, f = this.opts.frame;
+    const must = (f?.wide ?? [
       [L.lamp.x - 7, 0, L.lamp.max + 13], [L.lamp.x + 11, 0, L.lamp.max + 13], [L.lamp.x, 9, L.lamp.max],
       [W.x0 - 6, 0, 0], [W.x0 - 6, W.height + 7, -5], [W.x1 + 2, W.height + 7, -5], [W.x1 + 2, 0, 0],
       [54, 18, 92], [54, 0, 99],
       [L.duck.enterFrom - 10, 0, L.duck.z + 5], [L.duck.enterFrom - 10, 17, L.duck.z],
-    ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
-    const look = new THREE.Vector3(8, 10, 56), dir = new THREE.Vector3(-84, 47, 170).normalize(), pos = new THREE.Vector3(), v = new THREE.Vector3();
+    ]).map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const look = f ? new THREE.Vector3(...f.wideLook) : new THREE.Vector3(8, 10, 56), dir = new THREE.Vector3(...(f?.dir ?? [-84, 47, 170])).normalize(), pos = new THREE.Vector3(), v = new THREE.Vector3();
     this.camera.fov = 30;
-    for (let d = 150; d <= 560; d += 4) {
+    for (let d = f ? 90 : 150; d <= 560; d += 4) {
       pos.copy(look).addScaledVector(dir, d);
       this.camera.position.copy(pos);
       this.camera.lookAt(look);
       this.camera.updateProjectionMatrix();
       this.camera.updateMatrixWorld();
-      if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > -0.6 && v.y < 0.78; })) break;
+      if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > (f?.low ?? -0.6) && v.y < (f?.high ?? 0.78); })) break;
     }
     this.wide = { pos: pos.clone(), look };
 
     // Film view: square-on to the wall from above the lamp, far enough back that the whole
     // building sits between the letterbox bars.
-    const corners = [[W.x0 - 5, -1, 0], [W.x1 + 3, -1, 0], [W.x0 - 5, W.height + 4, 0], [W.x1 + 3, W.height + 4, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
-    const flook = new THREE.Vector3(2, 25, 0), fpos = new THREE.Vector3();
+    const corners = (f?.film ?? [[W.x0 - 5, -1, 0], [W.x1 + 3, -1, 0], [W.x0 - 5, W.height + 4, 0], [W.x1 + 3, W.height + 4, 0]]).map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const flook = f ? new THREE.Vector3(...f.look) : new THREE.Vector3(2, 25, 0), fpos = new THREE.Vector3();
     this.camera.fov = 34;
     for (let d = 100; d <= 420; d += 4) {
-      fpos.set(2, 50, d);
+      fpos.set(flook.x, f?.height ?? 50, d);
       this.camera.position.copy(fpos);
       this.camera.lookAt(flook);
       this.camera.updateProjectionMatrix();
@@ -1007,8 +1038,17 @@ export class Stage {
     this.flicker = Math.max(0, this.flicker - dt);
     const flick = this.flicker > 0 ? 0.55 + 0.45 * Math.sin(t * 90) : 1;
     this.house = ease(this.house, this.houseLights, dt, 4);
-    this.hemi.intensity = 0.16 + 1.05 * this.house;
-    this.work.intensity = 0.05 + 1.25 * this.house;
+    // A blackout takes the room's own light away altogether, painted backdrop included.
+    this.black = ease(this.black, this.blackout, dt, 3.5);
+    const room = 1 - this.black;
+    this.hemi.intensity = (0.16 + 1.05 * this.house) * room;
+    this.work.intensity = (0.05 + 1.25 * this.house) * room;
+    (this.skins.sky as THREE.MeshBasicMaterial).color.setHex(0x9aa7a8).multiplyScalar(room);
+    (this.skirt.material as THREE.MeshBasicMaterial).color.setHex(0x1b4f43).multiplyScalar(room);
+    (this.scene.background as THREE.Color).setHex(0x0f2d31).multiplyScalar(room);
+    // The slate's lettering is lit paint that stays readable in dim light; in a blackout it is paint.
+    this.slateMat.emissiveIntensity = 0.25 * room;
+    this.glintMat.color.setScalar(room);
     this.spot.intensity = 2.6 * this.lampOnLevel * flick;
     this.spot.position.set(L.lamp.x, L.lamp.y, this.lampZ);
     (this.lens.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2 * this.lampOnLevel * flick;
@@ -1018,7 +1058,7 @@ export class Stage {
     const len = this.spot.position.distanceTo(this.spot.target.position), rad = Math.tan(this.spot.angle) * len;
     this.cone.scale.set(rad, rad, len);
     this.cone.visible = false;
-    this.bloom.strength = 0.22 + 0.16 * (1 - this.house);
+    this.bloom.strength = 0.22 + 0.16 * (1 - this.house) + 0.25 * this.black;
 
     // Duck: a rigid toy, so it rocks and bobs instead of bending.
     this.duck.position.set(this.duckX, 0, L.duck.z);
@@ -1032,6 +1072,7 @@ export class Stage {
     this.duckBody.scale.set(1 + q, 1 - q, 1 + q);
 
     this.mark.position.x = this.markX;
+    this.mark.visible = this.showMark;
 
     // Handles and the rings that show what can be dragged.
     this.handles.lamp.position.set(L.lamp.x, 5, this.lampZ + 3);
@@ -1052,7 +1093,7 @@ export class Stage {
     for (const r of this.residents) {
       r.t += dt;
       const up = r.t < 0.9 ? Math.sin((r.t / 0.9) * Math.PI) : 0;
-      r.down = ease(r.down, r.t < 3.5 && r.t > 0.5 ? 1 : 0, dt, 6);
+      r.down = ease(r.down, r.away || (r.t < 3.5 && r.t > 0.5) ? 1 : 0, dt, 6);
       // A paper bust would show its cut bottom edge if it hopped, so only the modelled ones do.
       r.group.position.y = r.y + (r.card ? 0 : up * 1.6) - r.down * 4.2;
       r.group.scale.setScalar(1 - r.down * 0.7);

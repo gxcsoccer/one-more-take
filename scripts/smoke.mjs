@@ -78,7 +78,7 @@ async function reopen(name) {
 }
 
 try {
-  await page.goto(server.resolvedUrls.local[0]);
+  await page.goto(`${server.resolvedUrls.local[0]}?scene=02`);
   await page.waitForFunction(() => window.__omt, null, { timeout: 20000 * SLOW });
   await wait(1200);
   await shot('01-intro');
@@ -265,17 +265,170 @@ try {
   // A second 3D page next to the first is slow under software rendering: allow for it, and do not
   // wait for the load event, only for the game to report that its art has finished loading.
   lame.setDefaultTimeout(30000 * SLOW);
-  await lame.goto(server.resolvedUrls.local[0], { waitUntil: 'commit' });
+  await lame.goto(`${server.resolvedUrls.local[0]}?scene=02`, { waitUntil: 'commit' });
   await lame.waitForFunction(() => window.__omt && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
   const some = await lame.evaluate(() => window.__omt.art.loaded.sort());
   await lame.close();
   const missing = all.filter(n => !some.includes(n));
   if (missing.join() !== 'floor') fail(`with only floor.png missing, these failed to load: ${missing.join(', ') || '(nothing, not even floor)'}`);
 
+  // ---------- Scene 01, reached the way a child reaches it: from the list of scenes ----------
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.waitForSelector('.slate-card');
+  await wait(300);
+  await shot('20-lot');
+  const cards = await page.$$eval('.slate-card', els => els.map(e => e.textContent));
+  if (cards.length !== 3 || !/✓/.test(cards[1])) fail(`the list of scenes should show two scenes and the two-player try-out, the second scene wrapped: ${JSON.stringify(cards)}`);
+  await page.click('.slate-card[data-scene="01"]');
+  await page.waitForFunction(() => window.__omt?.scene === '01' && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
+  await wait(600);
+  await shot('21-s01-intro');
+  await page.click('#go');
+  await phase('block');
+  await wait(1200);
+  await shot('22-s01-spot');
+  const tap = async p => { await page.mouse.click(p.x, p.y); await wait(200); };
+  const tapProp = async id => tap((await omt('o.handles')).props[id]);
+  const setMarks = async ids => { for (const id of await omt('o.candidates')) if ((await omt('o.marked')).includes(id) !== ids.includes(id)) await tapProp(id); };
+  const shoot = async name => {
+    const n = await omt('o.takeNo');
+    await tap((await omt('o.handles')).clapper);
+    await page.waitForFunction(k => window.__omt.takeNo === k + 1 && window.__omt.blackout === 1, n, { timeout: 15000 * SLOW });
+    await wait(1300);
+    await shot(`${name}-dark`);
+    await page.waitForFunction(() => document.getElementById('burst').hidden === false, null, { timeout: 15000 * SLOW });
+    await wait(500);
+    await shot(name);
+    return omt('o.verdict');
+  };
+  const answer = async () => { await phase('quiz'); await wait(400); await page.click(`.opts button[data-i="${await omt('o.quizAnswer')}"]`); await wait(300); await page.click('#go'); };
+  // Everything on the bench, the switch and the clapperboard must be on screen.
+  for (const [name, p] of Object.entries({ ...(await omt('o.handles')).props, switch: (await omt('o.handles')).switch, clapper: (await omt('o.handles')).clapper })) {
+    const { width, height } = page.viewportSize();
+    if (p.x < 20 || p.x > width - 20 || p.y < 60 || p.y > height - 20) fail(`scene 01: "${name}" is off screen at ${Math.round(p.x)},${Math.round(p.y)}`);
+  }
+  // Nothing ticked: the clapperboard does nothing.
+  await tap((await omt('o.handles')).clapper);
+  if ((await omt('o.phase')) !== 'block' || (await omt('o.takeNo')) !== 0) fail('scene 01: a take started with nothing ticked');
+  // The switch puts the studio in the dark, and it comes back by itself.
+  await tap((await omt('o.handles')).switch);
+  if ((await omt('o.blackout')) !== 1) fail('scene 01: the switch did not black out the studio');
+  await wait(900);
+  await shot('23-s01-switch');
+  await page.waitForFunction(() => window.__omt.blackout === 0, null, { timeout: 8000 * SLOW });
+  // A wrong set of ticks is a CUT that says what was wrong.
+  await setMarks(['exit', 'moon']);
+  let w = await shoot('24-s01-spot-cut');
+  if (w.keeper || w.wrong.join() !== 'moon' || w.missed.join() !== 'lantern') fail(`scene 01: ticking the EXIT sign and the moon should be cut for the moon and the lantern: ${JSON.stringify(w)}`);
+  await phase('block');
+  await wait(600);
+  await setMarks(await omt('o.sources'));
+  w = await shoot('25-s01-spot-keeper');
+  if (!w.keeper) fail(`scene 01 spot: expected a keeper: ${JSON.stringify(w)}`);
+  await answer();
+  // Beat 2: the switch is taped over, so the ticks are a prediction.
+  await page.waitForFunction(() => window.__omt.beat === 'guess' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
+  await wait(1000);
+  await shot('26-s01-guess');
+  await tap((await omt('o.handles')).switch);
+  if ((await omt('o.blackout')) !== 0) fail('scene 01: the taped-over switch still worked');
+  // Shiny and white things are not sources, and neither is the duck.
+  await setMarks(['torch', 'ball', 'sheet', 'duck']);
+  w = await shoot('27-s01-guess-cut');
+  if (w.keeper || w.wrong.sort().join() !== 'ball,duck,sheet') fail(`scene 01 guess: the mirror ball, the sheet and the duck should be marked wrong: ${JSON.stringify(w)}`);
+  await phase('block');
+  await wait(600);
+  await setMarks(await omt('o.sources'));
+  w = await shoot('28-s01-guess-keeper');
+  if (!w.keeper) fail(`scene 01 guess: expected a keeper: ${JSON.stringify(w)}`);
+  await phase('quiz');
+  await wait(400);
+  await page.click(`.opts button[data-i="${await omt('o.quizAnswer')}"]`);
+  await wait(300);
+  // Reload after answering: the game must come back at the third beat, not ask again.
+  await page.reload();
+  await page.waitForFunction(() => window.__omt?.scene === '01', null, { timeout: 20000 * SLOW });
+  await wait(600);
+  if (!(await page.$('#over'))) fail('scene 01: a reload mid-scene should offer Continue and Start over');
+  await page.click('#go');
+  await page.waitForFunction(() => window.__omt.beat === 'star' && window.__omt.phase === 'block', null, { timeout: 20000 * SLOW });
+  await wait(1000);
+  await shot('29-s01-star');
+  // Beat 3: a mirror beside the duck lights nothing.
+  await tapProp('mirror');
+  await wait(500);
+  if ((await omt('o.placed')) !== 'mirror') fail('scene 01: tapping the mirror should stand it beside the duck');
+  w = await shoot('30-s01-star-cut');
+  if (w.keeper) fail('scene 01 star: a mirror beside the duck should not light it');
+  await phase('block');
+  await wait(600);
+  // Drag the candle to the stand with a finger.
+  for (let i = 0; i < 4 && (await omt('o.placed')) !== 'candle'; i++) await drag((await omt('o.handles')).props.candle, (await omt('o.handles')).stand);
+  await wait(500);
+  if ((await omt('o.placed')) !== 'candle') fail(`scene 01: dragging the candle to the stand left "${await omt('o.placed')}" there`);
+  w = await shoot('31-s01-star-keeper');
+  if (!w.keeper) fail(`scene 01 star: the candle beside the duck should be a keeper: ${JSON.stringify(w)}`);
+  await answer();
+  await page.waitForSelector('#hand', { timeout: 10000 * SLOW });
+  const key01 = await omt('o.openKey');
+  for (let b = 0; b < key01.length; b++) await page.click(`.blank[data-b="${b}"] button[data-o="${key01[b]}"]`);
+  await page.click('#hand');
+  await wait(300);
+  await shot('32-s01-interview');
+  if (!(await page.textContent('#mark')).startsWith(`${key01.length} / ${key01.length}`)) fail('scene 01: a fully right interview should score full marks');
+  await page.click('#go');
+  await phase('wrap');
+  await wait(500);
+  await shot('33-s01-wrap');
+  const sv01 = await omt('o.saved');
+  if (sv01.completed !== 1 || sv01.keepers.length !== 3) fail(`scene 01: after the wrap the save should count it once with three keepers: ${JSON.stringify(sv01)}`);
+  // Scene 02's record must have survived Scene 01 saving its own.
+  const both = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.save.v1')).scenes);
+  if (both['02']?.completed !== 1 || both['02'].keepers.length !== 3) fail(`scene 02's record was lost while playing scene 01: ${JSON.stringify(both['02'])}`);
+
+  // ---------- Shadow Monster: the two-player try-out ----------
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.click('.slate-card[data-scene="duo"]');
+  await page.waitForFunction(() => window.__omt?.wave && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
+  await page.click('#go');
+  await phase('live');
+  // Scared, and the cheer over: the next neighbour is at their window.
+  const scaredIs = n => page.waitForFunction(k => window.__omt.stats.scared === k && window.__omt.phase === 'live', n, { timeout: 20000 * SLOW });
+  // Lamp first, then the duck: the take is only good once both are right.
+  // Drag like a person would: aim, look, correct.
+  const put = async (what, v) => {
+    for (let i = 0; i < 4; i++) {
+      await drag((await omt('o.handles'))[what], await omt(what === 'lamp' ? `o.lampAt(${v})` : `o.duckAt(${v})`));
+      await wait(250 * SLOW);
+      if (Math.abs((await omt(what === 'lamp' ? 'o.pair.lampZ' : 'o.pair.duckX')) - v) < 0.4) return;
+    }
+    fail(`try-out: could not drag the ${what} to ${v}: ${JSON.stringify(await omt('o.pair'))}`);
+  };
+  const aim = async to => { await put('lamp', to.lampZ); await put('duck', to.duckX); };
+  for (let n = 1; n <= 4; n++) {
+    const home = await omt('o.targetHome');
+    if (Math.abs(home.spot.x - home.window.x) > 0.01 || Math.abs(home.spot.y - home.window.y) > 0.01) fail(`try-out: the neighbour to scare is not in the glowing window: ${JSON.stringify(home)}`);
+    const to = await omt('o.answer');
+    await put('lamp', to.lampZ);
+    await wait(700 * SLOW);
+    if (n === 4 && (await omt('o.stats.scared')) !== 3) fail('try-out: the lamp alone should not scare the top-floor neighbour');
+    await put('duck', to.duckX);
+    await page.waitForFunction(k => window.__omt.stats.scared === k, n, { timeout: 20000 * SLOW });
+    if (n === 3) await shot('40-duo-scared');
+    await scaredIs(n);
+  }
+  await page.waitForFunction(() => window.__omt.wave === 'hush' && window.__omt.phase === 'live', null, { timeout: 20000 * SLOW });
+  await aim(await omt('o.wakeSpot'));
+  await page.waitForFunction(() => window.__omt.stats.woke >= 1, null, { timeout: 20000 * SLOW });
+  await shot('41-duo-woke');
+  if ((await omt('o.stats.scared')) !== 4) fail('try-out: waking a sleeper must not count as a scare');
+  await aim(await omt('o.answer'));
+  await scaredIs(5);
+
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
-  for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
+  for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz', 'spot:take', 'guess:take', 'star:take', 'spot:got-shot', 'guess:got-shot', 'star:got-shot', 'spot:quiz', 'guess:quiz', 'star:quiz', 'duo-big:take', 'duo-big:got-shot', 'duo-hush:take']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
   if (errors.length) fail(`page errors:\n${errors.join('\n')}`);
-  console.log(`smoke ok: 3 beats, ${sv.keepers.length} keepers saved, resume and fresh start checked`);
+  console.log(`smoke ok: scene 02 (3 beats, ${sv.keepers.length} keepers, resume and fresh start) and scene 01 (3 beats, ${sv01.keepers.length} keepers, resume) played from the list of scenes; two-player try-out: first wave, a woken sleeper`);
 } catch (e) {
   await shot('zz-failure').catch(() => {});
   console.error(String(e.message || e));
