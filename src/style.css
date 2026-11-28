@@ -107,3 +107,29 @@ body.lot { background: radial-gradient(120% 90% at 50% 20%, #17414a, #0a1519); }
 .slate-card b { font-size: calc(var(--u) * 2.8); font-weight: 850; }
 .slate-card span { font-size: calc(var(--u) * 1.9); color: #9fb3ad; white-space: nowrap; }
 #slate { cursor: pointer; pointer-events: auto; }
+
+/* Shadow Monster: the two-player try-out. */
+.slate-card.duo { background: #3a2a1a; }
+.duo-hud { position: absolute; left: 50%; top: calc(var(--u) * 1.8); transform: translateX(-50%); display: flex; align-items: center; gap: calc(var(--u) * 1.8); height: calc(var(--u) * 4.4); padding: 0 calc(var(--u) * 2); border-radius: 99px; background: var(--card); border: 2px solid var(--line); font-size: calc(var(--u) * 1.9); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.duo-hud .pips i { display: inline-block; width: .8em; height: .8em; margin: 0 .16em; border-radius: 50%; background: #3b5357; }
+.duo-hud .pips i.on { background: var(--gold); box-shadow: 0 0 .6em var(--gold); }
+.duo-hud .pips i.done { background: var(--mint); }
+.duo-ring { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; border-radius: 50%; --p: 0; --c: var(--gold); background: conic-gradient(var(--c) calc(var(--p) * 1turn), rgba(255, 255, 255, .28) 0); -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 82%); mask: radial-gradient(closest-side, transparent 80%, #000 82%); will-change: transform; transition: opacity .2s; }
+.duo-ring.sleeper { --c: #ff6b5a; background: conic-gradient(var(--c) calc(var(--p) * 1turn), rgba(255, 107, 90, .25) 0); }
+.duo-ring.held { --c: #ff6b5a; }
+.duo-z { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; line-height: 1; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .6)); will-change: transform; }
+.duo-z.stir { animation: stir .18s linear infinite alternate; }
+@keyframes stir { from { margin-left: -3px; } to { margin-left: 3px; } }
+.duo-pop { position: fixed; z-index: 4; pointer-events: none; transform: translate(-50%, -50%); font-size: calc(var(--u) * 4.2); font-weight: 900; color: var(--gold); text-shadow: 0 .06em 0 #9a6a14, 0 .14em .5em rgba(0, 0, 0, .6); animation: duo-pop 1.2s cubic-bezier(.2, 1.4, .4, 1) both; white-space: nowrap; }
+.duo-pop.bad { color: #ff8a78; text-shadow: 0 .06em 0 #8f2c21, 0 .14em .5em rgba(0, 0, 0, .6); }
+@keyframes duo-pop { 0% { transform: translate(-50%, -50%) scale(.3) rotate(-8deg); opacity: 0; } 18% { transform: translate(-50%, -70%) scale(1.15) rotate(-4deg); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(-50%, -160%) scale(1) rotate(-4deg); opacity: 0; } }
+.duo-tag { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; padding: calc(var(--u) * .5) calc(var(--u) * 1.3); border-radius: 99px; background: var(--card); border: 2px solid var(--gold); font-size: calc(var(--u) * 1.8); font-weight: 800; white-space: nowrap; will-change: transform; }
+.duo-action { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 11); width: calc(var(--u) * 15); height: calc(var(--u) * 15); border-radius: 50%; background: #e9523f; color: #fff5e6; font-size: calc(var(--u) * 2.6); font-weight: 900; box-shadow: 0 .3em 0 #8f2c21, 0 0 0 .3em rgba(255, 245, 230, .25); animation: beat 1s ease-in-out infinite; }
+.duo-action:active { transform: translateY(.2em); box-shadow: 0 .1em 0 #8f2c21; }
+@keyframes beat { 50% { transform: scale(1.06); } }
+.duo-roles { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u) * 1.4); margin-bottom: calc(var(--u) * 2); }
+.duo-roles div { padding: calc(var(--u) * 1.4); border-radius: calc(var(--u) * 1.6); background: #f1e4c2; font-size: calc(var(--u) * 2); font-weight: 700; line-height: 1.3; }
+.duo-roles b { display: block; font-size: calc(var(--u) * 4.4); line-height: 1.1; }
+/* The table runs to the bottom of the picture, so the words go up into the sky. */
+body.duo #caption { bottom: auto; top: calc(var(--u) * 7.4); font-size: calc(var(--u) * 1.95); padding: calc(var(--u) * .8) calc(var(--u) * 2); }
+body.duo #burst { bottom: auto; top: 22vh; }

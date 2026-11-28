@@ -278,7 +278,7 @@ try {
   await wait(300);
   await shot('20-lot');
   const cards = await page.$$eval('.slate-card', els => els.map(e => e.textContent));
-  if (cards.length !== 2 || !/✓/.test(cards[1])) fail(`the list of scenes should show two scenes, the second one wrapped: ${JSON.stringify(cards)}`);
+  if (cards.length !== 3 || !/✓/.test(cards[1])) fail(`the list of scenes should show two scenes and the two-player try-out, the second scene wrapped: ${JSON.stringify(cards)}`);
   await page.click('.slate-card[data-scene="01"]');
   await page.waitForFunction(() => window.__omt?.scene === '01' && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
   await wait(600);
@@ -386,10 +386,49 @@ try {
   const both = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.save.v1')).scenes);
   if (both['02']?.completed !== 1 || both['02'].keepers.length !== 3) fail(`scene 02's record was lost while playing scene 01: ${JSON.stringify(both['02'])}`);
 
+  // ---------- Shadow Monster: the two-player try-out ----------
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.click('.slate-card[data-scene="duo"]');
+  await page.waitForFunction(() => window.__omt?.wave && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
+  await page.click('#go');
+  await phase('live');
+  // Scared, and the cheer over: the next neighbour is at their window.
+  const scaredIs = n => page.waitForFunction(k => window.__omt.stats.scared === k && window.__omt.phase === 'live', n, { timeout: 20000 * SLOW });
+  // Lamp first, then the duck: the take is only good once both are right.
+  // Drag like a person would: aim, look, correct.
+  const put = async (what, v) => {
+    for (let i = 0; i < 4; i++) {
+      await drag((await omt('o.handles'))[what], await omt(what === 'lamp' ? `o.lampAt(${v})` : `o.duckAt(${v})`));
+      await wait(250 * SLOW);
+      if (Math.abs((await omt(what === 'lamp' ? 'o.pair.lampZ' : 'o.pair.duckX')) - v) < 0.4) return;
+    }
+    fail(`try-out: could not drag the ${what} to ${v}: ${JSON.stringify(await omt('o.pair'))}`);
+  };
+  const aim = async to => { await put('lamp', to.lampZ); await put('duck', to.duckX); };
+  for (let n = 1; n <= 4; n++) {
+    const home = await omt('o.targetHome');
+    if (Math.abs(home.spot.x - home.window.x) > 0.01 || Math.abs(home.spot.y - home.window.y) > 0.01) fail(`try-out: the neighbour to scare is not in the glowing window: ${JSON.stringify(home)}`);
+    const to = await omt('o.answer');
+    await put('lamp', to.lampZ);
+    await wait(700 * SLOW);
+    if (n === 4 && (await omt('o.stats.scared')) !== 3) fail('try-out: the lamp alone should not scare the top-floor neighbour');
+    await put('duck', to.duckX);
+    await page.waitForFunction(k => window.__omt.stats.scared === k, n, { timeout: 20000 * SLOW });
+    if (n === 3) await shot('40-duo-scared');
+    await scaredIs(n);
+  }
+  await page.waitForFunction(() => window.__omt.wave === 'hush' && window.__omt.phase === 'live', null, { timeout: 20000 * SLOW });
+  await aim(await omt('o.wakeSpot'));
+  await page.waitForFunction(() => window.__omt.stats.woke >= 1, null, { timeout: 20000 * SLOW });
+  await shot('41-duo-woke');
+  if ((await omt('o.stats.scared')) !== 4) fail('try-out: waking a sleeper must not count as a scare');
+  await aim(await omt('o.answer'));
+  await scaredIs(5);
+
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
-  for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz', 'spot:take', 'guess:take', 'star:take', 'spot:got-shot', 'guess:got-shot', 'star:got-shot', 'spot:quiz', 'guess:quiz', 'star:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
+  for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz', 'spot:take', 'guess:take', 'star:take', 'spot:got-shot', 'guess:got-shot', 'star:got-shot', 'spot:quiz', 'guess:quiz', 'star:quiz', 'duo-big:take', 'duo-big:got-shot', 'duo-hush:take']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
   if (errors.length) fail(`page errors:\n${errors.join('\n')}`);
-  console.log(`smoke ok: scene 02 (3 beats, ${sv.keepers.length} keepers, resume and fresh start) and scene 01 (3 beats, ${sv01.keepers.length} keepers, resume) played from the list of scenes`);
+  console.log(`smoke ok: scene 02 (3 beats, ${sv.keepers.length} keepers, resume and fresh start) and scene 01 (3 beats, ${sv01.keepers.length} keepers, resume) played from the list of scenes; two-player try-out: first wave, a woken sleeper`);
 } catch (e) {
   await shot('zz-failure').catch(() => {});
   console.error(String(e.message || e));

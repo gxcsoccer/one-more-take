@@ -49,7 +49,7 @@ export interface StageOptions {
   /** 'building' is Scene 02's set. 'studio' is the bare table in front of a dark backdrop. */
   set?: 'building' | 'studio';
   /** Points that must be on screen in the wide view and in the film view, and where the film camera looks. */
-  frame?: { wide: [number, number, number][]; wideLook: [number, number, number]; film: [number, number, number][]; look: [number, number, number]; height: number };
+  frame?: { wide: [number, number, number][]; wideLook: [number, number, number]; film: [number, number, number][]; look: [number, number, number]; height: number; /** Direction from the look-at point to the wide camera. */ dir?: [number, number, number]; /** How low and how high on screen those points may sit, -1 bottom to 1 top. */ low?: number; high?: number };
 }
 
 export class Stage {
@@ -84,6 +84,8 @@ export class Stage {
   catVisible = false;
   catSulking = false;
   movable = { lamp: false, mark: false };
+  /** The tape cross where the duck stops. Hidden when the duck is moved by hand. */
+  showMark = true;
   clapperReady = false;
 
   private lampOnLevel = 0;
@@ -113,7 +115,7 @@ export class Stage {
   private rings!: { lamp: THREE.Mesh; mark: THREE.Mesh };
   private handles: Record<Pickable, THREE.Object3D>;
   private chalk!: { tex: THREE.CanvasTexture; k: CanvasRenderingContext2D };
-  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
+  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; away?: boolean; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
   private blocks: { box: THREE.Mesh; detail: THREE.Group; kind: 'a' | 'b' }[] = [];
   private clapBoard: HTMLImageElement | null = null;
   /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
@@ -869,6 +871,8 @@ export class Stage {
     this.catHop = 1;
   }
   scare(i: number) { this.residents[i].t = 0; }
+  /** Is this neighbour at the window at all? Away, they stay below the sill. */
+  setHome(i: number, home: boolean) { this.residents[i].away = !home; }
   get residentSpots() { return this.residents.map(r => ({ x: r.x, y: r.y })); }
 
   /**
@@ -976,7 +980,7 @@ export class Stage {
       [54, 18, 92], [54, 0, 99],
       [L.duck.enterFrom - 10, 0, L.duck.z + 5], [L.duck.enterFrom - 10, 17, L.duck.z],
     ]).map(([x, y, z]) => new THREE.Vector3(x, y, z));
-    const look = f ? new THREE.Vector3(...f.wideLook) : new THREE.Vector3(8, 10, 56), dir = new THREE.Vector3(-84, 47, 170).normalize(), pos = new THREE.Vector3(), v = new THREE.Vector3();
+    const look = f ? new THREE.Vector3(...f.wideLook) : new THREE.Vector3(8, 10, 56), dir = new THREE.Vector3(...(f?.dir ?? [-84, 47, 170])).normalize(), pos = new THREE.Vector3(), v = new THREE.Vector3();
     this.camera.fov = 30;
     for (let d = f ? 90 : 150; d <= 560; d += 4) {
       pos.copy(look).addScaledVector(dir, d);
@@ -984,7 +988,7 @@ export class Stage {
       this.camera.lookAt(look);
       this.camera.updateProjectionMatrix();
       this.camera.updateMatrixWorld();
-      if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > -0.6 && v.y < 0.78; })) break;
+      if (must.every(p => { v.copy(p).project(this.camera); return Math.abs(v.x) < 0.95 && v.y > (f?.low ?? -0.6) && v.y < (f?.high ?? 0.78); })) break;
     }
     this.wide = { pos: pos.clone(), look };
 
@@ -1068,6 +1072,7 @@ export class Stage {
     this.duckBody.scale.set(1 + q, 1 - q, 1 + q);
 
     this.mark.position.x = this.markX;
+    this.mark.visible = this.showMark;
 
     // Handles and the rings that show what can be dragged.
     this.handles.lamp.position.set(L.lamp.x, 5, this.lampZ + 3);
@@ -1088,7 +1093,7 @@ export class Stage {
     for (const r of this.residents) {
       r.t += dt;
       const up = r.t < 0.9 ? Math.sin((r.t / 0.9) * Math.PI) : 0;
-      r.down = ease(r.down, r.t < 3.5 && r.t > 0.5 ? 1 : 0, dt, 6);
+      r.down = ease(r.down, r.away || (r.t < 3.5 && r.t > 0.5) ? 1 : 0, dt, 6);
       // A paper bust would show its cut bottom edge if it hopped, so only the modelled ones do.
       r.group.position.y = r.y + (r.card ? 0 : up * 1.6) - r.down * 4.2;
       r.group.scale.setScalar(1 - r.down * 0.7);

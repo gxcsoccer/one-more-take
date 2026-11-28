@@ -11,6 +11,7 @@ import { $, card } from './ui';
 const want = new URLSearchParams(location.search).get('scene');
 if (want === '01') void import('./play01');
 else if (want === '02') void import('./play02');
+else if (want === 'duo') void import('./play-duo');
 else lot();
 
 /** The studio lot: one slate per scene, with how far the child has got in each. */
@@ -26,7 +27,7 @@ function lot() {
     const rows = SCENES.map(s => {
       const sv = save.scenes[s.id], state = inProgress(sv) ? t('lot.going', { n: sv.takeNo + 1 }) : sv.completed ? t('lot.done') : t('lot.new');
       return `<button class="slate-card" data-scene="${s.id}"><i>${s.id}</i><b>${rich(`s${s.id}.name`)}</b><span>${state}</span></button>`;
-    }).join('');
+    }).join('') + `<button class="slate-card duo" data-scene="duo"><i>★</i><b>${t('duo.name')}</b><span>${t('duo.state')}</span></button>`;
     const el = card(`<h1>${t('lot.h')}</h1><div class="lot">${rows}</div>`);
     el.querySelectorAll<HTMLButtonElement>('.slate-card').forEach(b => (b.onclick = () => { location.search = `?scene=${b.dataset.scene}`; }));
   };
