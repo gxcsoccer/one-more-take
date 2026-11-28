@@ -236,7 +236,10 @@ try {
   for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
   const lame = await browser.newPage({ viewport: page.viewportSize() });
   await lame.route('**/assets/floor.png', r => r.fulfill({ status: 404, body: '' }));
-  await lame.goto(server.resolvedUrls.local[0]);
+  // A second 3D page next to the first is slow under software rendering: allow for it, and do not
+  // wait for the load event, only for the game to report that its art has finished loading.
+  lame.setDefaultTimeout(30000 * SLOW);
+  await lame.goto(server.resolvedUrls.local[0], { waitUntil: 'commit' });
   await lame.waitForFunction(() => window.__omt && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
   const some = await lame.evaluate(() => window.__omt.art.loaded.sort());
   await lame.close();
