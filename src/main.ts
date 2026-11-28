@@ -70,9 +70,10 @@ function renderStatic() {
 }
 function caption(): string {
   if (phase === 'cameo') return rich('cat.cameo');
-  if (phase === 'review') return rich('again');
+  const again = lastVerdict?.catDark ? 'cat.again' : 'again';
+  if (phase === 'review') return rich(again);
   if (phase !== 'block') return '';
-  if (afterMiss) return rich('again');
+  if (afterMiss) return rich(again);
   if (beat().id === 'play') return rich(stage.clapperReady ? 'play.ready' : 'play.block');
   return rich(`${beat().id}.block`);
 }

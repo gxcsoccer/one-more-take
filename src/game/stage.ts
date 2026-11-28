@@ -76,7 +76,9 @@ export class Stage {
   private cat = new THREE.Group();
   private catEyes: THREE.Mesh[] = [];
   private catTail: THREE.Group | null = null;
+  private catGlow: THREE.MeshStandardMaterial[] = [];
   private catPop = 0;
+  private catShrink = 0;
   private catHop = 0;
   private clapper = new THREE.Group();
   private clapArm!: THREE.Mesh;
@@ -708,14 +710,27 @@ export class Stage {
         const g = c.getContext('2d', { willReadFrequently: true });
         if (g) { g.drawImage(img, 0, 0); px = g.getImageData(0, 0, c.width, c.height); }
       }
-      if (mat.map) { mat.emissiveMap = mat.map; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 0.35; }
+      const isEye = (d: Uint8ClampedArray, at: number) => d[at] > 200 && d[at + 1] > 150 && d[at + 2] < 70;
       for (let i = 0; i < pos.count; i++) {
         const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
         pts.push(p);
         if (!px) continue;
         const x = Math.min(px.width - 1, Math.max(0, Math.floor(uv.getX(i) * px.width))), y = Math.min(px.height - 1, Math.max(0, Math.floor(uv.getY(i) * px.height)));
-        const at = (y * px.width + x) * 4;
-        if (px.data[at] > 200 && px.data[at + 1] > 150 && px.data[at + 2] < 70) yellow.push(p);
+        if (isEye(px.data, (y * px.width + x) * 4)) yellow.push(p);
+      }
+      // A black cat in a black shadow cannot be seen. Its eyes shine by themselves, and the rest of
+      // it keeps a faint glow of its own colours, so it can still be found and read in the dark.
+      if (px && mat.map) {
+        const d = px.data;
+        for (let at = 0; at < d.length; at += 4) if (!isEye(d, at)) { d[at] *= 0.3; d[at + 1] *= 0.3; d[at + 2] *= 0.3; }
+        const c = document.createElement('canvas');
+        c.width = px.width; c.height = px.height;
+        c.getContext('2d')!.putImageData(px, 0, 0);
+        const glow = new THREE.CanvasTexture(c);
+        glow.flipY = false;
+        glow.colorSpace = THREE.SRGBColorSpace;
+        mat.emissiveMap = glow; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 1;
+        this.catGlow.push(mat);
       }
     });
     const box = new THREE.Box3().setFromPoints(pts), size = box.getSize(new THREE.Vector3());
@@ -1033,7 +1048,12 @@ export class Stage {
     // Cat.
     this.catPop = ease(this.catPop, this.catVisible ? 1 : 0, dt, 7);
     this.cat.scale.setScalar(Math.max(0.001, this.catPop));
-    this.cat.rotation.y = ease(this.cat.rotation.y, this.catSulking ? Math.PI * 0.86 : 0, dt, 6);
+    // In the dark the cat stays facing us, hunched and shivering, eyes shining. Turned away it
+    // would be a black shape on a black shadow, and nobody could tell why the take was cut.
+    this.catShrink = ease(this.catShrink, this.catSulking ? 1 : 0, dt, 8);
+    this.cat.scale.y *= 1 - 0.14 * this.catShrink;
+    this.cat.rotation.z = Math.sin(t * 38) * 0.05 * this.catShrink;
+    for (const m of this.catGlow) m.emissiveIntensity = 1 + 1.6 * this.catShrink;
     if (this.catTail) this.catTail.rotation.z = Math.sin(t * (this.catSulking ? 13 : 2.6)) * (this.catSulking ? 0.35 : 0.2) - 0.2;
     for (const e of this.catEyes) e.scale.y = ease(e.scale.y, this.catSulking ? 0.25 : 1, dt, 10);
     this.catHop = Math.max(0, this.catHop - dt * 1.3);
