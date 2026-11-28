@@ -96,8 +96,13 @@ export function catShade(s: Setup): number {
   return n / CAT_POINTS.length;
 }
 
-/** Is the cat in the duck's shadow? A clipped ear or flank does not count: at least 40% of what can be seen of it must be dark. */
-export const catInShadow = (s: Setup): boolean => catShade(s) >= 0.4;
+/**
+ * Does the duck's shadow touch the cat? The rule is the one a child can check by looking: any
+ * shadow that can be seen on the cat spoils the take. Under 5% of the cat is a sliver too thin
+ * to see on screen, and is let through.
+ */
+export const CAT_TOUCH = 0.05;
+export const catInShadow = (s: Setup): boolean => catShade(s) >= CAT_TOUCH;
 
 export interface Verdict { match: number; catDark: boolean; keeper: boolean }
 

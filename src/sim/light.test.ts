@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DUCK, inShadow, maskArea, maskTop, overlap, segmentHits, shadowMask, type Ellipsoid } from './light';
-import { catInShadow, catPoints, catShade, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
+import { CAT_TOUCH, catInShadow, catPoints, catShade, duckAt, GRID, judge, lampAt, maskOf, scene02 as S } from '../game/scene02';
 
 const ball: Ellipsoid[] = [{ c: { x: 0, y: 10, z: 0 }, r: { x: 5, y: 5, z: 5 } }];
 const at = (z: number) => ({ x: 0, y: 10, z });
@@ -90,24 +90,27 @@ describe('scene 02 is playable', () => {
     // Enough points to stand for an area, all on the front surface, well clear of the wall.
     expect(catPoints().length).toBeGreaterThan(60);
     for (const p of catPoints()) expect(p.z).toBeGreaterThan(1.9);
-    // Found in review, measured there on the rendered cat: 22.6% shaded here, 56.8% there.
-    // The first passes the outline and must not be cut for the cat; the second is truly dark.
-    expect(catShade({ lampZ: 61.5, markX: -1.5 })).toBeLessThan(0.4);
-    expect(judge(cat, { lampZ: 61.5, markX: -1.5 }).catDark).toBe(false);
-    expect(catShade({ lampZ: 58.5, markX: 7.5 })).toBeGreaterThan(0.4);
+    // The rule is the one a child can check by looking: a shadow that can be seen on the cat
+    // spoils the take, and the game says "the shadow touched the cat", which is true of a clipped
+    // cat as much as a covered one. Both of these were measured on the rendered cat in review:
+    // about a quarter shaded, and more than half.
+    expect(catShade({ lampZ: 61.5, markX: -1.5 })).toBeGreaterThan(0.2);
+    expect(judge(cat, { lampZ: 61.5, markX: -1.5 }).catDark).toBe(true);
     expect(catInShadow({ lampZ: 58.5, markX: 7.5 })).toBe(true);
-    // Found in review: a shadow that only clips the cat must not be reported as "the cat is in
-    // the dark". Such set-ups exist, and none of them may be called dark.
-    let clipped = 0;
+    // Every set-up is called by that one line: touched from 5% up, a sliver too thin to see below it.
+    let slivers = 0, clipped = 0;
     for (const z of lamps) for (const x of marks) {
-      const shade = catShade({ lampZ: z, markX: x });
-      if (shade > 0 && shade < 0.4) { clipped++; expect(judge(cat, { lampZ: z, markX: x }).catDark).toBe(false); }
+      const shade = catShade({ lampZ: z, markX: x }), dark = judge(cat, { lampZ: z, markX: x }).catDark;
+      expect(dark).toBe(shade >= CAT_TOUCH);
+      if (shade > 0 && shade < CAT_TOUCH) slivers++;
+      if (shade >= CAT_TOUCH && shade < 0.4) clipped++;
     }
     expect(clipped).toBeGreaterThan(20);
-    // The cat still matters: some set-ups fill the outline well enough and are cut only because of it.
-    let cutForCat = 0;
-    for (const z of lamps) for (const x of marks) { const v = judge(cat, { lampZ: z, markX: x }); if (v.match >= S.keeper && v.catDark) cutForCat++; }
-    expect(cutForCat).toBeGreaterThan(0);
+    expect(slivers).toBeLessThan(clipped);
+    // The cat matters: a good share of the set-ups that fill the outline well enough are cut only because of it.
+    let cutForCat = 0, outlineOk = 0;
+    for (const z of lamps) for (const x of marks) { const v = judge(cat, { lampZ: z, markX: x }); if (v.match >= S.keeper) { outlineOk++; if (v.catDark) cutForCat++; } }
+    expect(cutForCat / outlineOk).toBeGreaterThan(0.2);
     // The two set-ups the story depends on, at their extremes: fully dark, then fully lit.
     expect(catShade(dark.target)).toBe(1);
     expect(catShade(cat.target)).toBe(0);
@@ -121,7 +124,9 @@ describe('scene 02 is playable', () => {
     const share = wins / (lamps.length * marks.length);
     console.log(`beat cat: keeper region ${(share * 100).toFixed(1)}% of set-ups, widest mark window ${widest * 0.5} cm`);
     expect(widest * 0.5).toBeGreaterThanOrEqual(2.5);
-    expect(share).toBeGreaterThan(0.01);
+    // A little under 1% of all set-ups now that a clipped cat is a cut: still a window 2.5 cm wide
+    // for the duck and 8 cm long for the lamp, and still far too small to hit by guessing.
+    expect(share).toBeGreaterThan(0.007);
     expect(share).toBeLessThan(0.08);
   });
 });

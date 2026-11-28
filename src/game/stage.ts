@@ -55,6 +55,9 @@ export class Stage {
   lampOn = false;
   houseLights = 1;
   film = false;
+  /** Push in on the cat, for its entrance. */
+  closeUp = false;
+  private closeT = 0;
   catVisible = false;
   catSulking = false;
   movable = { lamp: false, mark: false };
@@ -871,6 +874,19 @@ export class Stage {
       stripes(ck, 7, 5);
       k.drawImage(c, 0, 0);
     }
+    if (this.catVisible) {
+      // The director's note around the cat: a little chalk sun. Keep this one in the light.
+      const cx = (CAT.seat.x - this.L.wall.x0) * 10, cy = H - (CAT.seat.y + 4.1) * 10, r = 66;
+      k.save();
+      k.strokeStyle = '#ffd76b'; k.lineWidth = 7; k.lineCap = 'round';
+      k.setLineDash([22, 13]);
+      k.beginPath(); k.arc(cx, cy, r, 0, Math.PI * 2); k.stroke();
+      k.setLineDash([]);
+      k.beginPath();
+      for (let a = 0; a < 12; a++) { const q = (a / 12) * Math.PI * 2 + 0.26; k.moveTo(cx + Math.cos(q) * (r + 12), cy + Math.sin(q) * (r + 12)); k.lineTo(cx + Math.cos(q) * (r + 26), cy + Math.sin(q) * (r + 26)); }
+      k.stroke();
+      k.restore();
+    }
     if (outline) {
       const src = stamp(outline), [c, ck] = layer();
       for (let a = 0; a < 16; a++) ck.drawImage(src, Math.cos((a / 16) * Math.PI * 2) * 7, Math.sin((a / 16) * Math.PI * 2) * 7, W, H);
@@ -967,6 +983,9 @@ export class Stage {
     const pos = this.wide.pos.clone().lerp(this.filmCam.pos, t);
     const look = this.wide.look.clone().lerp(this.filmCam.look, t);
     void a;
+    // The cat's entrance: come right up to it, so there is no doubt who the caption is about.
+    const c = smooth(this.closeT);
+    if (c > 0) { pos.lerp(new THREE.Vector3(CAT.seat.x + 5, CAT.seat.y + 7, 52), c); look.lerp(new THREE.Vector3(CAT.seat.x, CAT.seat.y + 4.2, CAT.seat.z), c); }
     this.camera.fov = THREE.MathUtils.lerp(30, 34, t);
     this.camera.position.copy(pos);
     this.camera.lookAt(look);
@@ -978,6 +997,7 @@ export class Stage {
   update(dt: number) {
     const L = this.L, t = (this.clock += dt);
     this.filmT = ease(this.filmT, this.film ? 1 : 0, dt, 3.2);
+    this.closeT = ease(this.closeT, this.closeUp ? 1 : 0, dt, 3.2);
     this.placeCamera();
 
     // Lights. The lamp flickers for a moment when it is switched on.
