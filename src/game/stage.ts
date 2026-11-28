@@ -30,6 +30,8 @@ function canvasTexture(w: number, h: number, paint: (k: CanvasRenderingContext2D
 
 /** The table top: width along x, depth along z starting at z0 (behind the building). Top surface is y = 0. */
 const TABLE = { w: 330, d: 200, z0: -48 };
+/** The two neighbouring-block designs, in centimetres. Their textures are drawn to these proportions. */
+const BLOCK = { a: { w: 44, h: 30 }, b: { w: 39, h: 42 }, d: 16 };
 /** How far below the table top the room's floor lies. */
 const ROOM_FLOOR = 82;
 
@@ -82,7 +84,13 @@ export class Stage {
   private rings: { lamp: THREE.Mesh; mark: THREE.Mesh };
   private handles: Record<Pickable, THREE.Object3D>;
   private chalk!: { tex: THREE.CanvasTexture; k: CanvasRenderingContext2D };
-  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number }[] = [];
+  private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
+  private blocks: { box: THREE.Mesh; detail: THREE.Group; kind: 'a' | 'b' }[] = [];
+  private clapBoard: HTMLImageElement | null = null;
+  /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
+  artLoaded: string[] = [];
+  artReady = false;
+  private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
   private flicker = 0;
@@ -217,23 +225,29 @@ export class Stage {
     const card = new THREE.MeshStandardMaterial({ color: 0xcdb692, roughness: 1 }), roofMat = new THREE.MeshStandardMaterial({ color: 0x8a7663, roughness: 1 });
     const bands = [0x7fb5a6, 0xe8b85a, 0xd98a5f, 0x7fb5a6].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
     const lit = new THREE.MeshStandardMaterial({ color: 0x2a2018, emissive: 0xffd98a, emissiveIntensity: 0.8 }), unlit = new THREE.MeshStandardMaterial({ color: 0x3f5a60, roughness: 0.4 });
-    ([[-82, 46, 34, -18], [-126, 40, 44, -30], [82, 46, 28, -16], [128, 42, 40, -30]] as const).forEach(([x, w, h, z], n) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 16), card);
+    // Two designs, each used twice: A is three storeys (44 × 30 × 16 cm), B is four (39 × 42 × 16 cm).
+    ([[-82, 'a', -18], [-126, 'b', -30], [82, 'a', -16], [128, 'b', -30]] as const).forEach(([x, kind, z], n) => {
+      const { w, h } = BLOCK[kind];
+      // One material per face, so the front and the two sides can take their own textures later.
+      const faces = [0, 1, 2, 3, 4, 5].map(i => (i === 2 ? roofMat : card.clone()));
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, BLOCK.d), faces);
       b.position.set(x, h / 2, z);
       b.receiveShadow = true;
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 2, 1.4, 18), roofMat);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 2, 1.4, BLOCK.d + 2), roofMat);
       roof.position.set(x, h + 0.7, z);
-      this.scene.add(b, roof);
+      const detail = new THREE.Group();
       for (let j = 0; j < Math.floor(h / 11); j++) {
         const band = new THREE.Mesh(new THREE.BoxGeometry(w, 1.3, 0.2), bands[(n + j) % bands.length]);
-        band.position.set(x, 1.4 + j * 11, z + 8.05);
-        this.scene.add(band);
+        band.position.set(x, 1.4 + j * 11, z + BLOCK.d / 2 + 0.05);
+        detail.add(band);
         for (let i = 0; i < 4; i++) {
           const win = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 5.4), (i + j * 3 + n) % 3 === 0 ? lit : unlit);
-          win.position.set(x - w / 2 + 7 + i * ((w - 14) / 3), 6.4 + j * 11, z + 8.06);
-          this.scene.add(win);
+          win.position.set(x - w / 2 + 7 + i * ((w - 14) / 3), 6.4 + j * 11, z + BLOCK.d / 2 + 0.06);
+          detail.add(win);
         }
       }
+      this.scene.add(b, roof, detail);
+      this.blocks.push({ box: b, detail, kind });
     });
   }
 
@@ -465,13 +479,15 @@ export class Stage {
     const k = c.getContext('2d')!, tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const paint = (take: number) => {
+      this.take = take;
       k.fillStyle = '#1b2224'; k.fillRect(0, 0, 512, 384);
+      if (this.clapBoard) k.drawImage(this.clapBoard, 0, 0, 512, 384);
       k.strokeStyle = '#f3e7c9'; k.lineWidth = 6; k.strokeRect(14, 14, 484, 356);
       k.beginPath(); k.moveTo(14, 190); k.lineTo(498, 190); k.moveTo(256, 14); k.lineTo(256, 190); k.stroke();
-      k.fillStyle = '#9fb3ad'; k.font = '700 34px system-ui, sans-serif'; k.textAlign = 'left';
-      k.fillText('SCENE', 34, 62); k.fillText('TAKE', 276, 62);
-      k.fillStyle = '#f3e7c9'; k.font = '900 100px system-ui, sans-serif';
-      k.fillText(this.L.id, 34, 160); k.fillText(String(take), 276, 160);
+      k.fillStyle = '#9fb3ad'; k.font = '800 46px system-ui, sans-serif'; k.textAlign = 'left';
+      k.fillText('SCENE', 30, 66); k.fillText('TAKE', 272, 66);
+      k.fillStyle = '#f3e7c9'; k.font = '900 96px system-ui, sans-serif';
+      k.fillText(this.L.id, 30, 170); k.fillText(String(take), 272, 170);
       k.fillStyle = '#ffcf6b'; k.font = '900 96px system-ui, sans-serif'; k.textAlign = 'center';
       k.fillText('ACTION!', 256, 318);
       tex.needsUpdate = true;
@@ -528,11 +544,18 @@ export class Stage {
    * Anything missing from public/assets/manifest.json keeps its placeholder.
    */
   async loadArt(base: string) {
+    let manifest: { slots?: Record<string, string>; props?: Record<string, string> };
     try {
-      const manifest = (await (await fetch(`${base}assets/manifest.json`)).json()) as { slots?: Record<string, string> };
-      for (const [slot, file] of Object.entries(manifest.slots ?? {})) {
-        const mat = this.skins[slot];
-        if (!mat) continue;
+      manifest = await (await fetch(`${base}assets/manifest.json`)).json();
+    } catch {
+      this.artReady = true; // no art delivered: loading is over, placeholders everywhere
+      return;
+    }
+    // Every file is on its own: one that fails to load leaves its placeholder and nothing else.
+    const surfaces = Object.entries(manifest.slots ?? {}).map(async ([slot, file]) => {
+      const mat = this.skins[slot];
+      if (!mat) return;
+      try {
         const tex = await new THREE.TextureLoader().loadAsync(`${base}assets/${file}`);
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
@@ -540,10 +563,65 @@ export class Stage {
         if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(3, 1); tex.offset.set(-1, 0); }
         mat.map = tex;
         mat.needsUpdate = true;
+        this.artLoaded.push(slot);
+      } catch {
+        /* keep the placeholder */
       }
-    } catch {
-      /* no art delivered yet */
+    });
+    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {})]);
+    this.artReady = true;
+  }
+
+  /**
+   * Flat props delivered as images: paper residents, the faces of the neighbouring blocks and
+   * the clapperboard's slate. Each is optional; whatever is missing keeps its placeholder.
+   */
+  private async loadProps(base: string, props: Record<string, string>) {
+    const loader = new THREE.TextureLoader();
+    const load = async (name: string) => {
+      if (!props[name]) return null;
+      try {
+        const t = await loader.loadAsync(`${base}assets/${props[name]}`);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 8;
+        this.artLoaded.push(name);
+        return t;
+      } catch {
+        return null;
+      }
+    };
+
+    // Residents: three people, used in turn. The cut-out is 384 px square; the bust's bottom
+    // edge is at row 364 and it is centred on column 192.
+    const people = await Promise.all([1, 2, 3].map(async n => ({ idle: await load(`resident-${n}-idle`), raised: await load(`resident-${n}-raised`) })));
+    const SIZE = 6.2, FOOT = (384 - 364) / 384;
+    this.residents.forEach((r, i) => {
+      const p = people[i % 3];
+      if (!p.idle || !p.raised) return;
+      const mat = new THREE.MeshStandardMaterial({ map: p.idle, transparent: true, alphaTest: 0.5, roughness: 1, side: THREE.DoubleSide });
+      const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, SIZE), mat);
+      // Stand the bust's bottom edge on the window's lower frame.
+      cardMesh.position.y = -this.L.windows.h / 2 + SIZE / 2 - FOOT * SIZE;
+      for (const old of [...r.group.children]) r.group.remove(old);
+      // Keep raised hands inside the window frame.
+      r.group.position.x = r.x + ((i % 3) - 1) * 0.6;
+      r.group.add(cardMesh);
+      r.card = { mat, idle: p.idle, raised: p.raised };
+    });
+
+    // Neighbouring blocks: a front and a side elevation per design. Box faces are +x, -x, +y, -y, +z, -z.
+    for (const kind of ['a', 'b'] as const) {
+      const front = await load(`block-${kind}-front`), side = await load(`block-${kind}-side`);
+      if (!front || !side) continue;
+      for (const b of this.blocks.filter(x => x.kind === kind)) {
+        const faces = b.box.material as THREE.MeshStandardMaterial[];
+        for (const [i, tex] of [[0, side], [1, side], [4, front]] as const) { faces[i].map = tex; faces[i].color.set(0xffffff); faces[i].needsUpdate = true; }
+        b.detail.visible = false;
+      }
     }
+
+    const board = await load('clapper-board');
+    if (board) { this.clapBoard = board.image as HTMLImageElement; this.slate.paint(this.take); }
   }
 
   // ---------- what the game calls ----------
@@ -755,9 +833,16 @@ export class Stage {
       r.t += dt;
       const up = r.t < 0.9 ? Math.sin((r.t / 0.9) * Math.PI) : 0;
       r.down = ease(r.down, r.t < 3.5 && r.t > 0.5 ? 1 : 0, dt, 6);
-      r.group.position.y = r.y + up * 1.6 - r.down * 4.2;
+      // A paper bust would show its cut bottom edge if it hopped, so only the modelled ones do.
+      r.group.position.y = r.y + (r.card ? 0 : up * 1.6) - r.down * 4.2;
       r.group.scale.setScalar(1 - r.down * 0.7);
-      for (const side of ['armL', 'armR']) { const arm = r.group.getObjectByName(side)!; arm.position.y = -1.9 + up * 2.4; arm.rotation.z = (side === 'armL' ? 1 : -1) * up * 0.5; }
+      // Once ducked below the sill a resident is out of sight, not a speck on the ledge.
+      r.group.visible = r.down < 0.9;
+      if (r.card) {
+        // Paper resident: same rise and drop, and the pose is a second cut-out rather than moving arms.
+        const want = up > 0.12 ? r.card.raised : r.card.idle;
+        if (r.card.mat.map !== want) { r.card.mat.map = want; r.card.mat.needsUpdate = true; }
+      } else for (const side of ['armL', 'armR']) { const arm = r.group.getObjectByName(side)!; arm.position.y = -1.9 + up * 2.4; arm.rotation.z = (side === 'armL' ? 1 : -1) * up * 0.5; }
     }
 
     // Cat.

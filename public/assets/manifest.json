@@ -3,5 +3,18 @@
     "facade": "facade.png",
     "floor": "floor.png",
     "sky": "sky.png"
+  },
+  "props": {
+    "resident-1-idle": "props/resident-1-idle.png",
+    "resident-1-raised": "props/resident-1-raised.png",
+    "resident-2-idle": "props/resident-2-idle.png",
+    "resident-2-raised": "props/resident-2-raised.png",
+    "resident-3-idle": "props/resident-3-idle.png",
+    "resident-3-raised": "props/resident-3-raised.png",
+    "block-a-front": "props/block-a-front.webp",
+    "block-a-side": "props/block-a-side.webp",
+    "block-b-front": "props/block-b-front.webp",
+    "block-b-side": "props/block-b-side.webp",
+    "clapper-board": "props/clapper-board.webp"
   }
 }

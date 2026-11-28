@@ -499,6 +499,7 @@ Object.assign(window, {
     get hint() { const h = $('hint'); return h.hidden ? null : h.getBoundingClientRect().toJSON(); },
     /** Window size the camera was last fitted to, so a test can wait for a resize to be applied. */
     get fitted() { return stage.fitted; },
+    get art() { return { ready: stage.artReady, loaded: [...stage.artLoaded] }; },
     get pixelRatio() { return stage.pixelRatio; },
     get lowestPixelRatio() { return stage.lowestRatio; },
     get handles() {

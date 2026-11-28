@@ -229,6 +229,23 @@ try {
   ratios.push(await omt('o.lowestPixelRatio'));
   if (!SOFT && Math.min(...ratios) !== 2) fail(`resolution was reduced on a fast machine: lowest ratios per page load were ${ratios.join(', ')}`);
 
+  // One missing texture must cost only itself. Serve a 404 for the table top on a second page:
+  // the sky, the residents, the blocks and the clapperboard must all still load.
+  await page.waitForFunction(() => window.__omt?.art.ready, null, { timeout: 30000 * SLOW });
+  const all = (await omt('o.art.loaded')).sort();
+  for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
+  const lame = await browser.newPage({ viewport: page.viewportSize() });
+  await lame.route('**/assets/floor.png', r => r.fulfill({ status: 404, body: '' }));
+  // A second 3D page next to the first is slow under software rendering: allow for it, and do not
+  // wait for the load event, only for the game to report that its art has finished loading.
+  lame.setDefaultTimeout(30000 * SLOW);
+  await lame.goto(server.resolvedUrls.local[0], { waitUntil: 'commit' });
+  await lame.waitForFunction(() => window.__omt && window.__omt.art.ready, null, { timeout: 30000 * SLOW });
+  const some = await lame.evaluate(() => window.__omt.art.loaded.sort());
+  await lame.close();
+  const missing = all.filter(n => !some.includes(n));
+  if (missing.join() !== 'floor') fail(`with only floor.png missing, these failed to load: ${missing.join(', ') || '(nothing, not even floor)'}`);
+
   const kinds = await page.evaluate(() => JSON.parse(localStorage.getItem('omt.evidence.v2') || '[]').map(e => `${e.shot}:${e.kind}`));
   for (const k of ['play:take', 'dark:take', 'cat:take', 'play:got-shot', 'dark:got-shot', 'cat:got-shot', 'play:quiz', 'dark:quiz', 'cat:quiz']) if (!kinds.includes(k)) fail(`no "${k}" evidence was logged`);
   if (errors.length) fail(`page errors:\n${errors.join('\n')}`);
