@@ -1,17 +1,32 @@
-# 第 02 场道具参考图
+# 第 02 场道具素材
 
-这组图供 Meshy 生成微缩片场道具。先用聚光灯验证比例、材质和加载。其余七件有各自的正面图。[整组预览](previews/scene02-model-references.jpg)
+聚光灯和黑猫使用多视图重建。其余六件道具通过平面与盒子贴图接入。下表链接到实际交付文件。[总览](previews/scene02-model-references.jpg)
 
-| 道具 | 首张输入 | 补充视角 |
+| 道具 | 文件 | 用途 |
 | --- | --- | --- |
-| 聚光灯 | [正面](scene02-models/lamp-front.png) | [侧面](scene02-models/lamp-side.png) |
-| 场记板 | [正面](scene02-models/clapper-front.png) | 单图 |
-| 黑猫 | [正面](scene02-models/cat-front.png) | [侧面斜视](scene02-models/cat-three-quarter.png) |
-| 短发居民 | [正面](scene02-models/resident-1-front.png) | 单图 |
-| 鸭舌帽居民 | [正面](scene02-models/resident-2-front.png) | 单图 |
-| 卷发居民 | [正面](scene02-models/resident-3-front.png) | 单图 |
-| 三层邻楼 | [正面](scene02-models/block-a-front.png) | [侧前方](scene02-models/block-a-three-quarter.png) |
-| 四层邻楼 | [正面](scene02-models/block-b-front.png) | [侧前方](scene02-models/block-b-three-quarter.png) |
+| 聚光灯 | [正面](scene02-models/lamp-front.jpg) · [侧面](scene02-models/lamp-side.jpg) | 一对模型参考，1024 × 1024 |
+| 黑猫 | [正面](scene02-models/cat-front.jpg) · [侧后方](scene02-models/cat-three-quarter.jpg) | 一对模型参考，1024 × 1024 |
+| 短发居民 | [常态](../../public/assets/props/resident-1-idle.png) · [举手](../../public/assets/props/resident-1-raised.png) | 单个平面上的两个姿势 |
+| 鸭舌帽居民 | [常态](../../public/assets/props/resident-2-idle.png) · [举手](../../public/assets/props/resident-2-raised.png) | 单个平面上的两个姿势 |
+| 卷发居民 | [常态](../../public/assets/props/resident-3-idle.png) · [举手](../../public/assets/props/resident-3-raised.png) | 单个平面上的两个姿势 |
+| 三层邻楼 | [正面](../../public/assets/props/block-a-front.webp) · [侧面](../../public/assets/props/block-a-side.webp) | 880 × 600 与 320 × 600 |
+| 四层邻楼 | [正面](../../public/assets/props/block-b-front.webp) · [侧面](../../public/assets/props/block-b-side.webp) | 780 × 840 与 320 × 840 |
+| 场记板 | [固定板面](../../public/assets/props/clapper-board.webp) | 768 × 576，动态文字的底图 |
+
+## 贴图接入
+
+- 居民的六张 PNG 都是 384 × 384。半身像的底边在第 364 行左右，水平中心在第 192 列。每次换姿势只切换同一平面的颜色贴图。受惊时沿用 `up` 的节奏与下沉运动；将旧手臂对象的动画改为换帧。使用 sRGB 和透明通道，在窗玻璃前检查剪纸边缘。
+- 邻楼的 UV 原点和朝向沿用 Three.js 的盒子几何，各面使用完整的 0–1 区间。正面和侧面的每条色带已对齐到相同的相对高度。侧面可复用于两侧；屋顶、背面和底面可沿用纯色。
+- 场记板贴图用于 `buildClapper().paint()` 的画布。每一拍先画底图，再画边框、文字与拍次。板面保持深色，使现有浅色字可读。活动打板臂和固定条纹条各有自己的几何体。
+- 运行时素材合计约 1.2 MB。模型参考和总览仅供制作。完整的原始 PNG 在本机留存，仓库中的 JPEG 可直接作为 Meshy 输入。
+
+## 贴图生成说明
+
+居民使用每位人物原来的正面作为身份参考。生成一张左右双格的透明图，同一件剪纸、同一正面镜头，左格为常态，右格为双手举至耳侧，发型、眼睛、纸边、衣领与胸像底边对齐。导出时按衣身底边中心和共同的头顶高度对齐两帧，保留原生透明通道。
+
+邻楼以原有正面与侧前方造型图为参考，生成单独的侧墙正投影视图。三层楼每层一扇小窗、灰绿色带，四层楼采用赭黄与珊瑚色交替。两侧颜色延续到墙边，正面从原图裁出建筑表面，侧面逐层对齐色带高度。
+
+场记板以原参考图的木质旧边为依据，生成满幅 4∶3 深炭灰板面。中央留出均匀的书写区，边缘仅有轻微磨损。游戏在上面绘制文字和标线。
 
 ## 聚光灯的接入尺寸
 
@@ -21,7 +36,7 @@
 
 每张图都以已采纳的片场、发条鸭和纸板立面设定图作为材质参考。补充视角同时使用对应道具的正面，聚光灯按下列修订过程出图。[片场](../concept/tabletop-set.png) · [发条鸭](../concept/wind-up-duck.png) · [纸板立面](../concept/cardboard-facade.png)
 
-### 七件道具共用的正面说明
+### 原始道具正面的共用说明
 
 An isolated handmade miniature prop for image-to-3D reconstruction, straight-on FRONT elevation, full object entirely visible and centered on a solid uniform light blue-gray background. Flat soft light, no floor plane or cast shadow, no labels, text, watermarks or props. Square frame. Three approved reference sheets establish one common world: the tabletop miniature in the first, painted enamel or wood in the second, layered warm paper material in the third. Output a SINGLE object only, never a contact sheet.
 
