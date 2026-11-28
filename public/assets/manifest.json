@@ -16,5 +16,8 @@
     "block-b-front": "props/block-b-front.webp",
     "block-b-side": "props/block-b-side.webp",
     "clapper-board": "props/clapper-board.webp"
+  },
+  "models": {
+    "lamp": "models/lamp.glb"
   }
 }

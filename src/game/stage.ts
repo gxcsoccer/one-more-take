@@ -11,6 +11,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DUCK, type Grid } from '../sim/light';
 import { CAT, type Scene02 } from './scene02';
 import { AdaptiveResolution } from './quality';
@@ -90,6 +91,8 @@ export class Stage {
   /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
   artLoaded: string[] = [];
   artReady = false;
+  /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
+  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number }> = {};
   private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
@@ -544,7 +547,7 @@ export class Stage {
    * Anything missing from public/assets/manifest.json keeps its placeholder.
    */
   async loadArt(base: string) {
-    let manifest: { slots?: Record<string, string>; props?: Record<string, string> };
+    let manifest: { slots?: Record<string, string>; props?: Record<string, string>; models?: Record<string, string> };
     try {
       manifest = await (await fetch(`${base}assets/manifest.json`)).json();
     } catch {
@@ -568,8 +571,65 @@ export class Stage {
         /* keep the placeholder */
       }
     });
-    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {})]);
+    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {}), this.loadModels(base, manifest.models ?? {}).catch(() => {})]);
     this.artReady = true;
+  }
+
+  /** Generated 3D models. Each is optional; a missing or broken one keeps its placeholder. */
+  private async loadModels(base: string, models: Record<string, string>) {
+    if (!models.lamp) return;
+    const gltf = await new GLTFLoader().loadAsync(`${base}assets/${models.lamp}`);
+    const model = gltf.scene;
+    model.updateMatrixWorld(true);
+    // Gather every vertex in the model's own space.
+    const pts: THREE.Vector3[] = [];
+    let triangles = 0;
+    model.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.castShadow = false; // the lamp must not block its own light
+      // A faint glow of its own colours, so it still reads as the thing to grab when the set is dark.
+      const mat = m.material as THREE.MeshStandardMaterial;
+      if (mat.map) { mat.emissiveMap = mat.map; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 0.3; }
+      const pos = m.geometry.getAttribute('position');
+      triangles += (m.geometry.index ? m.geometry.index.count : pos.count) / 3;
+      for (let i = 0; i < pos.count; i++) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    });
+    const box = new THREE.Box3().setFromPoints(pts), size = box.getSize(new THREE.Vector3());
+    // The barrel runs along the longer horizontal axis. The lens end is the one that is still
+    // full-width at its tip; the back of the barrel is a dome that tapers.
+    const axis: 'x' | 'z' = size.x >= size.z ? 'x' : 'z', len = size[axis];
+    // Look only at the barrel: the wheels below it can stick out further than either end.
+    const barrel = pts.filter(p => p.y > box.min.y + size.y * 0.4 && p.y < box.min.y + size.y * 0.85);
+    const ends = { max: Math.max(...barrel.map(p => p[axis])), min: Math.min(...barrel.map(p => p[axis])) };
+    const tip = (sign: 1 | -1) => barrel.filter(p => (sign > 0 ? ends.max - p[axis] : p[axis] - ends.min) < len * 0.04);
+    const spread = (ps: THREE.Vector3[]) => Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y));
+    const front = spread(tip(1)) >= spread(tip(-1)) ? 1 : -1;
+    const other: 'x' | 'z' = axis === 'x' ? 'z' : 'x';
+    // The lens rim is a circle. Its upper half is clear of the wheels, so measure there: the rim's
+    // top, and its radius from how wide it is. The centre is one radius below the top.
+    const face = front > 0 ? ends.max : ends.min;
+    const lensPts = pts.filter(p => Math.abs(p[axis] - face) < len * 0.04 && p.y > box.min.y + size.y * 0.4);
+    const sideMax = Math.max(...lensPts.map(p => p[other])), sideMin = Math.min(...lensPts.map(p => p[other]));
+    const lensRadius = (sideMax - sideMin) / 2, lensSide = (sideMax + sideMin) / 2;
+    const lensY = Math.max(...lensPts.map(p => p.y)) - lensRadius;
+    // Scale so the lens centre sits at the height of the simulated light source. That height
+    // decides where shadows fall, so it is the one measurement that must be exact.
+    const k = this.L.lamp.y / (lensY - box.min.y);
+    // Move the lens centre's foot to the origin, then turn the lens towards the wall (−z) and scale.
+    const lensTip = front > 0 ? ends.max : ends.min;
+    model.position.set(axis === 'x' ? -lensTip : -lensSide, -box.min.y, axis === 'z' ? -lensTip : -lensSide);
+    const holder = new THREE.Group();
+    holder.add(model);
+    holder.rotation.y = axis === 'x' ? (front > 0 ? Math.PI / 2 : -Math.PI / 2) : front > 0 ? Math.PI : 0;
+    holder.scale.setScalar(k);
+    for (const old of [...this.lampRig.children]) if (old !== this.lens) this.lampRig.remove(old);
+    this.lampRig.add(holder);
+    // Keep the glowing disc just in front of the model's lens.
+    this.lens.position.set(0, this.L.lamp.y, -0.08);
+    this.lens.scale.setScalar(((lensRadius * k) / 2.5) * 0.78);
+    this.models.lamp = { height: size.y * k, width: size[other] * k, depth: len * k, lensHeight: (lensY - box.min.y) * k, triangles };
+    this.artLoaded.push('model:lamp');
   }
 
   /**
