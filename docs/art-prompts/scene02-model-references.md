@@ -111,3 +111,13 @@ Turn the exact same handmade cardboard building from reference 1 by approximatel
 ### block-b
 
 Turn the exact same handmade cardboard building from reference 1 by approximately 32 degrees to show the original front and its right wall. Keep the same height, front windows, number of floors, band colors, flat roof and materials, including the particular roof cap silhouette. This is a shallow three-dimensional box, about 16 cm deep relative to its 39 cm front width and 42 cm height. Wrap the same colored floor bands around the right side with up to two simple mostly dark small windows per floor. One isolated miniature, full building in view, almost orthographic, level camera with only a little of the roof visible. Same flat plain blue-grey background and diffuse light as the front reference. No ground plane, stand, cast shadows, lettering, doors with writing or other objects. The other concept sheets establish the materials.
+
+## 聚光灯模型的生成记录
+
+2026-11-28 用 Meshy 的 `POST /openapi/v1/multi-image-to-3d` 生成，输入为上面的正面和侧面两张参考图（正面在前），参数：`ai_model` meshy-7.1，`geometry_resolution` standard，`texture_model` meshy-7，`should_remesh` true，`topology` triangle，`target_polycount` 6000，`should_texture` true，`enable_pbr` true，`texture_resolution` 2k，`target_formats` ["glb"]。
+
+- 实际扣费 30 点，直接从套餐的月度积分里扣，没有单独的 API 额度。
+- 产出 6063 个三角面，一个网格，三张 2K 贴图（颜色、金属度与粗糙度、法线），原文件 10.3 MB。
+- 入库前用 `node scripts/shrink-glb.mjs` 把贴图缩到 1024 并转成 JPEG，得到 [`public/assets/models/lamp.glb`](../../public/assets/models/lamp.glb)，1.3 MB。
+- 接入时由代码自动找出镜片所在的一端并转向墙面，车轮落在 0.35 cm 高的轨顶上，再按“镜片中心离桌面 4 cm”缩放。缩放后灯顶离桌面 7.6 cm（模型自身从轮底到灯顶 7.2 cm）、宽 5.0 cm、长 7.8 cm。轨道按这盏灯的轮距重新铺设。
+- Meshy 返回的预览图：[lamp-model.png](previews/lamp-model.png)。

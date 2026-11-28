@@ -11,6 +11,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DUCK, type Grid } from '../sim/light';
 import { CAT, type Scene02 } from './scene02';
 import { AdaptiveResolution } from './quality';
@@ -90,6 +91,13 @@ export class Stage {
   /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
   artLoaded: string[] = [];
   artReady = false;
+  /** Which end of the lamp model was taken to be the lens, e.g. "-x". For tests. */
+  lampLens = '';
+  private rails: THREE.Mesh[] = [];
+  private lampModel: THREE.Object3D | null = null;
+  private sleepers: THREE.Mesh[] = [];
+  /** Measurements of the delivered models as placed on the set, in centimetres. For tests. */
+  models: Record<string, { height: number; width: number; depth: number; lensHeight?: number; triangles: number; wheelGauge?: number; wheelBottom?: number; railTop?: number; railX?: number }> = {};
   private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
@@ -338,8 +346,8 @@ export class Stage {
   private buildTracks() {
     const L = this.L, steel = new THREE.MeshStandardMaterial({ color: 0x2c2724, roughness: 0.5, metalness: 0.6 }), wood = new THREE.MeshStandardMaterial({ color: 0x4d3b2f, roughness: 1 });
     const len = L.lamp.max - L.lamp.min + 16, mid = (L.lamp.max + L.lamp.min) / 2;
-    for (const x of [-2.8, 2.8]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, len), steel); r.position.set(L.lamp.x + x, 0.45, mid); this.scene.add(r); }
-    for (let z = L.lamp.min - 6; z <= L.lamp.max + 6; z += 5) { const s = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 1.1), wood); s.position.set(L.lamp.x, 0.16, z); s.receiveShadow = true; this.scene.add(s); }
+    for (const x of [-2.8, 2.8]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, len), steel); r.position.set(L.lamp.x + x, 0.45, mid); this.scene.add(r); this.rails.push(r); }
+    for (let z = L.lamp.min - 6; z <= L.lamp.max + 6; z += 5) { const s = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 1.1), wood); s.position.set(L.lamp.x, 0.16, z); s.receiveShadow = true; this.scene.add(s); this.sleepers.push(s); }
     const dl = L.duck.max - L.duck.enterFrom + 6, dm = (L.duck.max + L.duck.enterFrom) / 2;
     for (const z of [-2.3, 2.3]) { const r = new THREE.Mesh(new THREE.BoxGeometry(dl, 0.25, 0.4), steel); r.position.set(dm, 0.13, L.duck.z + z); this.scene.add(r); }
 
@@ -544,7 +552,7 @@ export class Stage {
    * Anything missing from public/assets/manifest.json keeps its placeholder.
    */
   async loadArt(base: string) {
-    let manifest: { slots?: Record<string, string>; props?: Record<string, string> };
+    let manifest: { slots?: Record<string, string>; props?: Record<string, string>; models?: Record<string, string> };
     try {
       manifest = await (await fetch(`${base}assets/manifest.json`)).json();
     } catch {
@@ -568,8 +576,107 @@ export class Stage {
         /* keep the placeholder */
       }
     });
-    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {})]);
+    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {}), this.loadModels(base, manifest.models ?? {}).catch(() => {})]);
     this.artReady = true;
+  }
+
+  /**
+   * How the lamp model's wheels meet the rails, measured from the meshes as they stand in the
+   * scene and not from the numbers used to place them. For each of the four wheels: how many of
+   * the model's vertices lie over the rail, and the gap between the lowest of them and the rail
+   * top (cm). `shift` moves the rails outwards for the measurement only, to prove the check bites.
+   */
+  lampContact(shift = 0): { wheel: string; over: number; gap: number }[] | null {
+    if (!this.lampModel) return null;
+    this.lampRig.position.set(this.L.lamp.x, 0, this.lampZ);
+    this.lampRig.updateMatrixWorld(true);
+    const verts: THREE.Vector3[] = [];
+    this.lampModel.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const pos = m.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) verts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    });
+    const midZ = (Math.min(...verts.map(v => v.z)) + Math.max(...verts.map(v => v.z))) / 2;
+    return this.rails.flatMap(rail => {
+      rail.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(rail), side = Math.sign(rail.position.x - this.L.lamp.x) || 1;
+      b.min.x += side * shift; b.max.x += side * shift;
+      return (['front', 'back'] as const).map(end => {
+        const over = verts.filter(v => v.x >= b.min.x && v.x <= b.max.x && (end === 'front' ? v.z < midZ : v.z >= midZ));
+        return { wheel: `${side < 0 ? 'left' : 'right'}-${end}`, over: over.length, gap: over.length ? Math.min(...over.map(v => v.y)) - b.max.y : Infinity };
+      });
+    });
+  }
+
+  /** Generated 3D models. Each is optional; a missing or broken one keeps its placeholder. */
+  private async loadModels(base: string, models: Record<string, string>) {
+    if (!models.lamp) return;
+    const gltf = await new GLTFLoader().loadAsync(`${base}assets/${models.lamp}`);
+    const model = gltf.scene;
+    model.updateMatrixWorld(true);
+    // Gather every vertex in the model's own space.
+    const pts: THREE.Vector3[] = [];
+    let triangles = 0;
+    model.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.castShadow = false; // the lamp must not block its own light
+      // A faint glow of its own colours, so it still reads as the thing to grab when the set is dark.
+      const mat = m.material as THREE.MeshStandardMaterial;
+      if (mat.map) { mat.emissiveMap = mat.map; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 0.3; }
+      const pos = m.geometry.getAttribute('position');
+      triangles += (m.geometry.index ? m.geometry.index.count : pos.count) / 3;
+      for (let i = 0; i < pos.count; i++) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    });
+    const box = new THREE.Box3().setFromPoints(pts), size = box.getSize(new THREE.Vector3());
+    // The barrel runs along the longer horizontal axis. The lens end is the one that is still
+    // full-width at its tip; the back of the barrel is a dome that tapers.
+    const axis: 'x' | 'z' = size.x >= size.z ? 'x' : 'z', len = size[axis];
+    // Look only at the barrel: the wheels below it can stick out further than either end.
+    const barrel = pts.filter(p => p.y > box.min.y + size.y * 0.4 && p.y < box.min.y + size.y * 0.85);
+    const ends = { max: Math.max(...barrel.map(p => p[axis])), min: Math.min(...barrel.map(p => p[axis])) };
+    const tip = (sign: 1 | -1) => barrel.filter(p => (sign > 0 ? ends.max - p[axis] : p[axis] - ends.min) < len * 0.04);
+    const spread = (ps: THREE.Vector3[]) => Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y));
+    const front = spread(tip(1)) >= spread(tip(-1)) ? 1 : -1;
+    const other: 'x' | 'z' = axis === 'x' ? 'z' : 'x';
+    // The lens rim is a circle. Its upper half is clear of the wheels, so measure there: the rim's
+    // top, and its radius from how wide it is. The centre is one radius below the top.
+    const face = front > 0 ? ends.max : ends.min;
+    const lensPts = pts.filter(p => Math.abs(p[axis] - face) < len * 0.04 && p.y > box.min.y + size.y * 0.4);
+    const sideMax = Math.max(...lensPts.map(p => p[other])), sideMin = Math.min(...lensPts.map(p => p[other]));
+    const lensRadius = (sideMax - sideMin) / 2, lensSide = (sideMax + sideMin) / 2;
+    const lensY = Math.max(...lensPts.map(p => p.y)) - lensRadius;
+    // Scale so the lens centre sits at the height of the simulated light source. That height
+    // decides where shadows fall, so it is the one measurement that must be exact.
+    // The wheels ride on the rails, so the model stands on the rail tops, and the scale is what
+    // puts the lens centre at the light source's height from there.
+    const RAIL_TOP = 0.35;
+    const k = (this.L.lamp.y - RAIL_TOP) / (lensY - box.min.y);
+    // Where the wheels touch down: the lowest sliver of the model, either side of the centre line.
+    const treads = pts.filter(p => p.y < box.min.y + size.y * 0.02);
+    const gauge = (treads.reduce((a, p) => a + Math.abs(p[other] - lensSide), 0) / Math.max(1, treads.length)) * k;
+    // Refuse a model that cannot be placed, before anything of the placeholder is removed.
+    if (!triangles || !lensPts.length || !treads.length || !(k > 0) || !Number.isFinite(k) || !(gauge > 0.5)) throw new Error('lamp model has no usable geometry');
+    // Move the lens centre's foot to the origin, then turn the lens towards the wall (−z) and scale.
+    const lensTip = front > 0 ? ends.max : ends.min;
+    model.position.set(axis === 'x' ? -lensTip : -lensSide, -box.min.y + RAIL_TOP / k, axis === 'z' ? -lensTip : -lensSide);
+    const holder = new THREE.Group();
+    holder.add(model);
+    holder.rotation.y = axis === 'x' ? (front > 0 ? Math.PI / 2 : -Math.PI / 2) : front > 0 ? Math.PI : 0;
+    holder.scale.setScalar(k);
+    for (const old of [...this.lampRig.children]) if (old !== this.lens) this.lampRig.remove(old);
+    this.lampRig.add(holder);
+    this.lampModel = holder;
+    // Keep the glowing disc just in front of the model's lens.
+    this.lens.position.set(0, this.L.lamp.y, -0.08);
+    this.lens.scale.setScalar(((lensRadius * k) / 2.5) * 0.78);
+    this.lampLens = `${front > 0 ? '+' : '-'}${axis}`;
+    // Lay the track to this lamp's gauge: low rails under the wheel treads, sleepers below them.
+    this.rails.forEach((r, i) => { r.scale.y = 0.6; r.position.y = RAIL_TOP - 0.15; r.position.x = this.L.lamp.x + (i ? gauge : -gauge); });
+    for (const sl of this.sleepers) { sl.scale.y = 0.66; sl.position.y = 0.1; sl.scale.x = (gauge * 2 + 2.4) / 8.4; }
+    this.models.lamp = { height: RAIL_TOP + size.y * k, width: size[other] * k, depth: len * k, lensHeight: RAIL_TOP + (lensY - box.min.y) * k, triangles, wheelGauge: gauge, wheelBottom: RAIL_TOP, railTop: this.rails[0].position.y + 0.15, railX: Math.abs(this.rails[0].position.x - this.L.lamp.x) };
+    this.artLoaded.push('model:lamp');
   }
 
   /**

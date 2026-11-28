@@ -233,7 +233,23 @@ try {
   // the sky, the residents, the blocks and the clapperboard must all still load.
   await page.waitForFunction(() => window.__omt?.art.ready, null, { timeout: 30000 * SLOW });
   const all = (await omt('o.art.loaded')).sort();
-  for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
+  // The spotlight model: its lens must sit exactly at the height of the simulated light source,
+  // and it must be the size of a toy, not a prop that swallows the track.
+  const lampModel = (await omt('o.models')).lamp;
+  if (!lampModel) fail('the spotlight model did not load');
+  // Checked by rendering this file from both ends: the lens is at the model's −x end, the dome at +x.
+  if ((await omt('o.lampLens')) !== '-x') fail(`the lens end of the spotlight was taken to be ${await omt('o.lampLens')}; in lamp.glb it is -x`);
+  if (Math.abs(lampModel.lensHeight - 4) > 0.05) fail(`spotlight lens is ${lampModel.lensHeight} cm above the table, must be 4`);
+  // Its wheels must stand on the rails. Measured from the meshes as they stand in the scene:
+  // each of the four wheels has part of itself over a rail, resting on the rail top.
+  const onRails = c => c.length === 4 && c.every(w => w.over > 0 && Math.abs(w.gap) < 0.08);
+  const contact = await omt('o.lampContact()');
+  if (!onRails(contact)) fail(`spotlight wheels are not on the rails: ${JSON.stringify(contact)}`);
+  // And the check must be able to fail: with the rails 1 cm further out, no wheel reaches them.
+  if (onRails(await omt('o.lampContact(1)'))) fail('the wheel-on-rail check still passes with the rails moved 1 cm out');
+  if (lampModel.height < 6 || lampModel.height > 10 || lampModel.depth > 13 || lampModel.width > 10) fail(`spotlight size is off: ${JSON.stringify(lampModel)}`);
+  console.log(`spotlight model: ${JSON.stringify(Object.fromEntries(Object.entries(lampModel).map(([k, v]) => [k, +v.toFixed(2)])))}`);
+  for (const want of ['facade', 'floor', 'sky', 'resident-1-idle', 'resident-3-raised', 'block-a-front', 'block-b-side', 'clapper-board', 'model:lamp']) if (!all.includes(want)) fail(`"${want}" did not load on a normal run; loaded: ${all.join(', ')}`);
   const lame = await browser.newPage({ viewport: page.viewportSize() });
   await lame.route('**/assets/floor.png', r => r.fulfill({ status: 404, body: '' }));
   // A second 3D page next to the first is slow under software rendering: allow for it, and do not

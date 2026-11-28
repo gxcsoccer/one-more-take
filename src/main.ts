@@ -500,6 +500,9 @@ Object.assign(window, {
     /** Window size the camera was last fitted to, so a test can wait for a resize to be applied. */
     get fitted() { return stage.fitted; },
     get art() { return { ready: stage.artReady, loaded: [...stage.artLoaded] }; },
+    get models() { return JSON.parse(JSON.stringify(stage.models)); },
+    get lampLens() { return stage.lampLens; },
+    lampContact: (shift = 0) => stage.lampContact(shift),
     get pixelRatio() { return stage.pixelRatio; },
     get lowestPixelRatio() { return stage.lowestRatio; },
     get handles() {
