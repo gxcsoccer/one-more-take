@@ -87,6 +87,9 @@ export class Stage {
   private residents: { group: THREE.Group; x: number; y: number; t: number; down: number; card?: { mat: THREE.MeshStandardMaterial; idle: THREE.Texture; raised: THREE.Texture } }[] = [];
   private blocks: { box: THREE.Mesh; detail: THREE.Group; kind: 'a' | 'b' }[] = [];
   private clapBoard: HTMLImageElement | null = null;
+  /** Names of the delivered art that actually loaded, and whether loading has finished. For tests. */
+  artLoaded: string[] = [];
+  artReady = false;
   private take = 1;
   private confetti!: { points: THREE.Points; vel: Float32Array; life: number };
   private squash = 0;
@@ -481,10 +484,10 @@ export class Stage {
       if (this.clapBoard) k.drawImage(this.clapBoard, 0, 0, 512, 384);
       k.strokeStyle = '#f3e7c9'; k.lineWidth = 6; k.strokeRect(14, 14, 484, 356);
       k.beginPath(); k.moveTo(14, 190); k.lineTo(498, 190); k.moveTo(256, 14); k.lineTo(256, 190); k.stroke();
-      k.fillStyle = '#9fb3ad'; k.font = '700 34px system-ui, sans-serif'; k.textAlign = 'left';
-      k.fillText('SCENE', 34, 62); k.fillText('TAKE', 276, 62);
-      k.fillStyle = '#f3e7c9'; k.font = '900 100px system-ui, sans-serif';
-      k.fillText(this.L.id, 34, 160); k.fillText(String(take), 276, 160);
+      k.fillStyle = '#9fb3ad'; k.font = '800 46px system-ui, sans-serif'; k.textAlign = 'left';
+      k.fillText('SCENE', 30, 66); k.fillText('TAKE', 272, 66);
+      k.fillStyle = '#f3e7c9'; k.font = '900 96px system-ui, sans-serif';
+      k.fillText(this.L.id, 30, 170); k.fillText(String(take), 272, 170);
       k.fillStyle = '#ffcf6b'; k.font = '900 96px system-ui, sans-serif'; k.textAlign = 'center';
       k.fillText('ACTION!', 256, 318);
       tex.needsUpdate = true;
@@ -541,11 +544,17 @@ export class Stage {
    * Anything missing from public/assets/manifest.json keeps its placeholder.
    */
   async loadArt(base: string) {
+    let manifest: { slots?: Record<string, string>; props?: Record<string, string> };
     try {
-      const manifest = (await (await fetch(`${base}assets/manifest.json`)).json()) as { slots?: Record<string, string>; props?: Record<string, string> };
-      for (const [slot, file] of Object.entries(manifest.slots ?? {})) {
-        const mat = this.skins[slot];
-        if (!mat) continue;
+      manifest = await (await fetch(`${base}assets/manifest.json`)).json();
+    } catch {
+      return; // no art delivered yet
+    }
+    // Every file is on its own: one that fails to load leaves its placeholder and nothing else.
+    const surfaces = Object.entries(manifest.slots ?? {}).map(async ([slot, file]) => {
+      const mat = this.skins[slot];
+      if (!mat) return;
+      try {
         const tex = await new THREE.TextureLoader().loadAsync(`${base}assets/${file}`);
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
@@ -553,11 +562,13 @@ export class Stage {
         if (slot === 'sky') { tex.wrapS = THREE.MirroredRepeatWrapping; tex.repeat.set(3, 1); tex.offset.set(-1, 0); }
         mat.map = tex;
         mat.needsUpdate = true;
+        this.artLoaded.push(slot);
+      } catch {
+        /* keep the placeholder */
       }
-      await this.loadProps(base, manifest.props ?? {});
-    } catch {
-      /* no art delivered yet */
-    }
+    });
+    await Promise.all([...surfaces, this.loadProps(base, manifest.props ?? {}).catch(() => {})]);
+    this.artReady = true;
   }
 
   /**
@@ -572,6 +583,7 @@ export class Stage {
         const t = await loader.loadAsync(`${base}assets/${props[name]}`);
         t.colorSpace = THREE.SRGBColorSpace;
         t.anisotropy = 8;
+        this.artLoaded.push(name);
         return t;
       } catch {
         return null;
@@ -590,6 +602,8 @@ export class Stage {
       // Stand the bust's bottom edge on the window's lower frame.
       cardMesh.position.y = -this.L.windows.h / 2 + SIZE / 2 - FOOT * SIZE;
       for (const old of [...r.group.children]) r.group.remove(old);
+      // Keep raised hands inside the window frame.
+      r.group.position.x = r.x + ((i % 3) - 1) * 0.6;
       r.group.add(cardMesh);
       r.card = { mat, idle: p.idle, raised: p.raised };
     });
@@ -818,7 +832,8 @@ export class Stage {
       r.t += dt;
       const up = r.t < 0.9 ? Math.sin((r.t / 0.9) * Math.PI) : 0;
       r.down = ease(r.down, r.t < 3.5 && r.t > 0.5 ? 1 : 0, dt, 6);
-      r.group.position.y = r.y + up * 1.6 - r.down * 4.2;
+      // A paper bust would show its cut bottom edge if it hopped, so only the modelled ones do.
+      r.group.position.y = r.y + (r.card ? 0 : up * 1.6) - r.down * 4.2;
       r.group.scale.setScalar(1 - r.down * 0.7);
       // Once ducked below the sill a resident is out of sight, not a speck on the ledge.
       r.group.visible = r.down < 0.9;
